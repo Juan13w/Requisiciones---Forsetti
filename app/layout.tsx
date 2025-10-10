@@ -14,6 +14,10 @@ export const metadata: Metadata = {
   title: 'Sistema de requisiciones',
   description: 'Diseñado específicamente para empresas que necesitan un control eficiente de sus procesos de requisiciones.',
   generator: 'Sistema de requisiciones',
+  icons: {
+    icon: '/images/Logo.png',
+    apple: '/images/Logo.png',
+  }
 }
 
 export default function RootLayout({
