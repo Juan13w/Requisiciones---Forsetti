@@ -11,11 +11,15 @@ interface UpdateResult {
  * Maneja las solicitudes PUT para actualizar una requisición existente.
  * Acepta 'estado', 'comentarioRechazo', 'fechaUltimoRechazo', 'intentosRevision'.
  */
+
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   const requisicionId = parseInt(params.id, 10);
   if (isNaN(requisicionId) || requisicionId <= 0) {
     return NextResponse.json({ success: false, error: 'ID de requisición no válido' }, { status: 400 });
   }
+
+  let body: any = {};
+
 
   try {
     const body = await request.json();
@@ -42,7 +46,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     // Construcción dinámica de la consulta SQL para evitar inyecciones y manejar campos opcionales
     const fieldsToUpdate: string[] = [];
-    const values: (string | number | null)[] = [];
+    const values: (string | number | Buffer | null)[] = [];
 
     fieldsToUpdate.push('estado = ?');
     values.push(estado);
@@ -78,28 +82,69 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       fieldsToUpdate.push('proceso = ?');
       values.push(proceso);
     }
-    if (Array.isArray(imagenes) && imagenes.length > 0) {
-      fieldsToUpdate.push('img = ?');
-      values.push(imagenes[0]);
-    }
 
-    // Siempre actualizamos la fecha de modificación para llevar un registro
-    fieldsToUpdate.push('fecha_ultimo_modificacion = NOW()');
-
-    // El ID de la requisición va al final para el WHERE
+    // Actualizar los campos de la requisición
     values.push(requisicionId);
-
     const sql = `UPDATE requisicion SET ${fieldsToUpdate.join(', ')} WHERE requisicion_id = ?`;
-
     const result = await query<UpdateResult>(sql, values);
 
     if (result.affectedRows === 0) {
       return NextResponse.json({ success: false, error: 'La requisición no fue encontrada o no se realizaron cambios' }, { status: 404 });
     }
 
-    // Registrar historial del cambio
+    // Manejar múltiples archivos adjuntos si se proporcionan
+    if (imagenes && Array.isArray(imagenes)) {
+      try {
+        // Procesar los archivos
+        const archivos = [];
+        
+        for (const imagen of imagenes) {
+          if (typeof imagen === 'string' && imagen.includes('base64,')) {
+            const base64Part = imagen.split(',')[1];
+            const buffer = Buffer.from(base64Part, 'base64');
+            const nombreArchivo = `requisicion_${requisicionId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.pdf`;
+            
+            archivos.push({
+              buffer,
+              nombreArchivo,
+              tipoMime: 'application/pdf',
+              tamano: buffer.length
+            });
+          }
+        }
+        
+        // Si hay archivos para guardar
+        if (archivos.length > 0) {
+          // Eliminar archivos existentes para esta requisición
+          await query('DELETE FROM requisicion_archivos WHERE requisicion_id = ?', [requisicionId]);
+          
+          // Insertar los nuevos archivos
+          for (const archivo of archivos) {
+            await query(
+              `INSERT INTO requisicion_archivos 
+               (requisicion_id, nombre_archivo, ruta_archivo, tipo_mime, tamano)
+               VALUES (?, ?, ?, ?, ?)`,
+              [
+                requisicionId,
+                archivo.nombreArchivo,
+                archivo.buffer,
+                archivo.tipoMime,
+                archivo.tamano
+              ]
+            );
+          }
+        }
+      } catch (e) {
+        console.warn('Error al procesar archivos adjuntos:', e);
+        // Continuamos a pesar del error con los archivos
+      }
+    }
+
+  
+
+    // Registrar el cambio en el historial
     try {
-      const comentarioParaHistorial = comentarioRechazo !== undefined ? comentarioRechazo : null;
+      const comentarioParaHistorial = comentarioRechazo || 'Requisición actualizada';
       await query(
         'INSERT INTO requisicion_historial (requisicion_id, estado, comentario) VALUES (?, ?, ?)',
         [requisicionId, estado, comentarioParaHistorial]
@@ -109,17 +154,66 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       // No interrumpimos el flujo por error de historial
     }
 
-    // Después de actualizar, obtenemos el registro completo para devolverlo
-    const [updatedRows] = await query<any[]>('SELECT * FROM requisicion WHERE requisicion_id = ?', [requisicionId]);
-
-    if (updatedRows.length === 0) {
+    // Obtener la requisición actualizada con los archivos adjuntos
+    const updatedRows = await query(
+      `SELECT r.*
+       FROM requisicion r 
+       WHERE r.requisicion_id = ?`,
+      [requisicionId]
+    ) as any[];
+    
+    if (!updatedRows || updatedRows.length === 0) {
       return NextResponse.json({ success: false, error: 'No se pudo recuperar la requisición actualizada' }, { status: 404 });
     }
+    // Obtener todos los archivos adjuntos
+      const archivosResult = await query(
+      'SELECT * FROM requisicion_archivos WHERE requisicion_id = ?',
+      [requisicionId]
+    );
 
-    return NextResponse.json({ success: true, message: 'Requisición actualizada correctamente', data: updatedRows[0] });
+const archivos = Array.isArray(archivosResult) ? archivosResult : [];
 
+    
+    // Procesar los archivos para incluir la URL de descarga
+    const archivosProcesados = archivos.map((archivo: any) => {
+      // Verificar si el archivo es un PDF
+      const esPdf = archivo.ruta_archivo && archivo.ruta_archivo.length > 0 &&
+                   archivo.ruta_archivo[0] === 0x25 && // %
+                   archivo.ruta_archivo[1] === 0x50 && // P
+                   archivo.ruta_archivo[2] === 0x44 && // D
+                   archivo.ruta_archivo[3] === 0x46;   // F
+      
+      const tipoMime = esPdf ? 'application/pdf' : 'application/octet-stream';
+      const base64Data = archivo.ruta_archivo.toString('base64');
+      
+      return {
+        archivo_id: archivo.archivo_id,
+        nombre_archivo: archivo.nombre_archivo,
+        tipo_mime: tipoMime,
+        tamano: archivo.tamano,
+        fecha_creacion: archivo.fecha_creacion,
+        url: `data:${tipoMime};base64,${base64Data}`,
+        descargarUrl: `/api/requisiciones/${requisicionId}/archivos/${archivo.archivo_id}?download=true`
+      };
+    });
+    
+    // Crear la respuesta
+    const respuesta = {
+      ...updatedRows[0],
+      archivos: archivosProcesados
+    };
+
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Requisición actualizada correctamente', 
+      data: respuesta 
+    });
   } catch (error) {
-    console.error('Error en PUT /api/requisiciones/[id]:', error);
+    console.error('❌ ERROR EN PUT /api/requisiciones/[id]');
+    console.error('➡️ ID recibido:', requisicionId);
+    console.error('➡️ Body recibido:', body);
+    console.error('➡️ Error completo:', error);
+
     const errorMessage = error instanceof Error ? error.message : 'Error desconocido en el servidor';
     // Diferenciar entre error de parseo de JSON y otros errores
     if (error instanceof SyntaxError) {

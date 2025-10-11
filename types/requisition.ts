@@ -1,3 +1,13 @@
+export interface ArchivoAdjunto {
+  archivo_id: number;
+  nombre_archivo: string;
+  tipo_mime: string;
+  tamano: number;
+  fecha_creacion: string;
+  url: string;
+  descargarUrl?: string;
+}
+
 export interface Requisition {
   id: string;
   consecutivo: string;
@@ -8,7 +18,8 @@ export interface Requisition {
   justificacion: string;
   descripcion: string;
   cantidad: number;
-  imagenes: string[]; // URLs de las imágenes en base64
+  imagenes?: string[]; // Mantenemos esto por compatibilidad
+  archivos?: ArchivoAdjunto[]; // Nueva propiedad para los archivos adjuntos
   estado: 'pendiente' | 'aprobada' | 'rechazada' | 'correccion';
   fechaCreacion: number; // timestamp
   intentosRevision?: number;

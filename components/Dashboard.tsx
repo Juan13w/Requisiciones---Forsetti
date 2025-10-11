@@ -7,8 +7,13 @@ import { v4 as uuidv4 } from "uuid"
 import RequisitionForm from "./RequisitionForm"
 import RequisitionList from "./RequisitionList"
 import RequisitionDetails from "./RequisitionDetails"
-import type { Requisition } from "@/types/requisition"
+import type { Requisition, ArchivoAdjunto } from "@/types/requisition"
 import "../styles/Dashboard.css"
+
+type RequisitionFormData = Omit<Requisition, "id" | "fechaCreacion" | "fechaUltimaModificacion" | "fechaUltimoRechazo" | "intentosRevision"> & {
+  imagenes: string[];
+  comentarioRechazo?: string;
+};
 
 const STORAGE_KEY = "requisiciones"
 
@@ -280,29 +285,27 @@ const Dashboard = () => {
 
 
   // Preparar datos iniciales para el formulario
-  const getInitialData = (): Omit<Requisition, 'id' | 'fechaCreacion'> => {
+  const getInitialData = (): RequisitionFormData => {
     if (editingId) {
       const requisition = requisitions.find((r) => r.id === editingId);
-      // Asegurarse de que el comentario de rechazo y el estado se incluyan si existen
       if (requisition) {
-        // Asegurarse de que el estado sea uno de los valores permitidos
-        const estadoValido: 'pendiente' | 'aprobada' | 'rechazada' | 'correccion' = 
-          requisition.estado === 'pendiente' || 
-          requisition.estado === 'aprobada' || 
-          requisition.estado === 'rechazada' || 
-          requisition.estado === 'correccion' 
-            ? requisition.estado 
-            : 'pendiente';
-            
         return {
-          ...requisition,
-          estado: estadoValido,
-          comentarioRechazo: requisition.comentarioRechazo || ""
+          consecutivo: requisition.consecutivo || '',
+          empresa: requisition.empresa || '',
+          fechaSolicitud: requisition.fechaSolicitud || new Date().toISOString().split('T')[0],
+          nombreSolicitante: requisition.nombreSolicitante || '',
+          proceso: requisition.proceso || '',
+          justificacion: requisition.justificacion || '',
+          descripcion: requisition.descripcion || '',
+          cantidad: requisition.cantidad || 0,
+          estado: requisition.estado || 'pendiente',
+          imagenes: requisition.imagenes || [],
+          comentarioRechazo: requisition.comentarioRechazo || '',
         };
       }
     }
     
-    // Si no hay requisición existente, devolver una nueva con valores por defecto
+    // Valores por defecto para un nuevo formulario
     return {
       consecutivo: `REQ-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
       empresa: userData?.empresa || "",
@@ -313,8 +316,8 @@ const Dashboard = () => {
       cantidad: 1,
       imagenes: [],
       fechaSolicitud: new Date().toISOString().split("T")[0],
-      comentarioRechazo: "",
-      estado: 'pendiente'
+      estado: 'pendiente',
+      comentarioRechazo: ""
     };
   };
 

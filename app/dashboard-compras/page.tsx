@@ -244,12 +244,20 @@ export default function DashboardCompras() {
       if (newStatus === 'rechazada' || newStatus === 'correccion') {
         body.comentarioRechazo = comentarioRechazo;
         body.fechaUltimoRechazo = new Date().toISOString();
-
+      
         if (newStatus === 'correccion') {
           const requisicion = requisiciones.find(
             (r) => r.id === id || r.requisicion_id.toString() === id
           );
+      
           body.intentosRevision = (requisicion?.intentosRevision || 0) + 1;
+      
+          // ✅ Campos adicionales requeridos por el backend
+          body.descripcion = requisicion?.descripcion || '';
+          body.cantidad = requisicion?.cantidad || 1;
+          body.justificacion = requisicion?.justificacion || '';
+          body.proceso = requisicion?.proceso || '';
+          body.imagenes = requisicion?.imagenes || [];
         }
       }
 

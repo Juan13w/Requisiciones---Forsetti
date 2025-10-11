@@ -18,10 +18,25 @@ export async function POST(request: Request) {
       );
     }
 
-    // Convertir el PDF de base64 a Buffer si existe
-    const pdfBuffer = formData.imagenes && formData.imagenes.length > 0
-      ? Buffer.from(formData.imagenes[0].split(',')[1], 'base64')
-      : null;
+    // Procesar múltiples archivos PDF si existen
+    const archivos = [];
+    
+    if (formData.imagenes && Array.isArray(formData.imagenes)) {
+      for (const imagen of formData.imagenes) {
+        if (typeof imagen === 'string' && imagen.includes('base64,')) {
+          const base64Data = imagen.split(',')[1];
+          const buffer = Buffer.from(base64Data, 'base64');
+          const nombreArchivo = `requisicion_${Date.now()}_${Math.random().toString(36).substring(2, 9)}.pdf`;
+          
+          archivos.push({
+            buffer,
+            nombreArchivo,
+            tipoMime: 'application/pdf',
+            tamano: buffer.length
+          });
+        }
+      }
+    }
 
     // Asegurar que el consecutivo sea texto
     const consecutivo = formData.consecutivo?.toString() || '';
@@ -49,72 +64,113 @@ export async function POST(request: Request) {
 
     console.log('📦 Creando requisición para coordinador ID:', coordinadorId);
 
-    // Insertar en la base de datos
-    const [result] = await pool.execute(
-      `INSERT INTO requisicion 
-       (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, descripcion, cantidad, pdf, coordinador_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        consecutivo,
-        formData.empresa || '',
-        formData.fechaSolicitud || new Date().toISOString().split('T')[0],
-        formData.nombreSolicitante || '',
-        formData.proceso || '',
-        formData.justificacion || '',
-        formData.descripcion || '',
-        Number(formData.cantidad) || 1,
-        pdfBuffer,
-        coordinadorId
-      ]
-    ) as any;
+    // Iniciar transacción
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
 
-    // Obtener ID insertado
-    let insertId: number | null = result?.insertId || null;
-    if (!insertId) {
-      const [rows] = await pool.query('SELECT LAST_INSERT_ID() as id');
-      insertId = Array.isArray(rows) && rows[0] ? (rows[0] as any).id : null;
-    }
-
-    // Registrar historial
     try {
-      const estadoInicial = formData.estado || 'pendiente';
-      const comentarioInicial = 'Requisición creada';
-      await pool.execute(
-        'INSERT INTO requisicion_historial (requisicion_id, estado, comentario, usuario) VALUES (?, ?, ?, ?)',
-        [insertId, estadoInicial, comentarioInicial, nombreSolicitante || null]
-      );
-    } catch (histErr) {
-      console.warn('⚠️ No se pudo registrar historial:', histErr);
-    }
+      // Insertar la requisición sin el campo PDF
+      const [result] = await connection.execute(
+        `INSERT INTO requisicion 
+         (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, descripcion, cantidad, coordinador_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          consecutivo,
+          formData.empresa || '',
+          formData.fechaSolicitud || new Date().toISOString().split('T')[0],
+          formData.nombreSolicitante || '',
+          formData.proceso || '',
+          formData.justificacion || '',
+          formData.descripcion || '',
+          Number(formData.cantidad) || 1,
+          coordinadorId
+        ]
+      ) as any;
 
-    // Enviar notificación (opcional)
-    if (process.env.NOTIFICATION_EMAIL) {
-      try {
-        const [requisicion] = await pool.query(
-          'SELECT * FROM requisicion WHERE requisicion_id = ?',
-          [insertId]
-        ) as any[];
-
-        if (requisicion && requisicion.length > 0) {
-          const reqData = requisicion[0];
-
-          await enviarNotificacionRequisicion(process.env.NOTIFICATION_EMAIL, {
-            titulo: `Requisición ${reqData.consecutivo}`,
-            descripcion: reqData.descripcion || 'Sin descripción adicional',
-            fecha_creacion: reqData.fecha_solicitud,
-            creado_por: reqData.nombre_solicitante || 'Usuario desconocido'
-          });
-        }
-      } catch (emailError) {
-        console.error('Error al enviar correo:', emailError);
+      // Obtener ID insertado
+      let insertId: number | null = result?.insertId || null;
+      if (!insertId) {
+        const [rows] = await connection.query('SELECT LAST_INSERT_ID() as id');
+        insertId = Array.isArray(rows) && rows[0] ? (rows[0] as any).id : null;
       }
-    }
 
-    return NextResponse.json({ success: true, id: insertId });
+      // Guardar todos los archivos en la tabla requisicion_archivos
+      if (archivos.length > 0 && insertId) {
+        for (const archivo of archivos) {
+          await connection.execute(
+            `INSERT INTO requisicion_archivos 
+             (requisicion_id, nombre_archivo, ruta_archivo, tipo_mime, tamano)
+             VALUES (?, ?, ?, ?, ?)`,
+            [
+              insertId,
+              archivo.nombreArchivo,
+              archivo.buffer,
+              archivo.tipoMime,
+              archivo.tamano
+            ]
+          );
+        }
+      }
+
+      // Registrar historial
+      try {
+        const estadoInicial = formData.estado || 'pendiente';
+        const comentarioInicial = 'Requisición creada';
+        await connection.execute(
+          'INSERT INTO requisicion_historial (requisicion_id, estado, comentario, usuario) VALUES (?, ?, ?, ?)',
+          [insertId, estadoInicial, comentarioInicial, nombreSolicitante || null]
+        );
+      } catch (histErr) {
+        console.warn('⚠️ No se pudo registrar historial:', histErr);
+        throw histErr; // Relanzar para que se maneje en el catch externo
+      }
+
+      // Confirmar la transacción
+      await connection.commit();
+      connection.release();
+
+      // Enviar notificación (opcional)
+      if (process.env.NOTIFICATION_EMAIL && insertId) {
+        try {
+          const [requisicion] = await connection.query(
+            'SELECT * FROM requisicion WHERE requisicion_id = ?',
+            [insertId]
+          ) as any[];
+
+          if (requisicion && requisicion.length > 0) {
+            const reqData = requisicion[0];
+
+            await enviarNotificacionRequisicion(process.env.NOTIFICATION_EMAIL, {
+              titulo: `Requisición ${reqData.consecutivo}`,
+              descripcion: reqData.descripcion || 'Sin descripción adicional',
+              fecha_creacion: reqData.fecha_solicitud,
+              creado_por: reqData.nombre_solicitante || 'Usuario desconocido'
+            });
+          }
+        } catch (emailError) {
+          console.error('Error al enviar correo:', emailError);
+          // No relanzamos el error para no fallar la creación de la requisición
+        }
+      }
+
+      return NextResponse.json({ success: true, id: insertId });
+    } catch (error) {
+      // Revertir la transacción en caso de error
+      if (connection) {
+        await connection.rollback();
+        connection.release();
+      }
+      
+      console.error('❌ Error al guardar requisición:', error);
+      return NextResponse.json(
+        { error: 'Error interno del servidor al guardar la requisición' },
+        { status: 500 }
+      );
+    }
   } catch (error) {
-    console.error('❌ Error al guardar requisición:', error);
+    console.error('❌ Error en la función POST:', error);
     return NextResponse.json(
-      { error: 'Error interno del servidor al guardar la requisición' },
+      { error: 'Error interno del servidor' },
       { status: 500 }
     );
   }
@@ -142,16 +198,58 @@ export async function GET(request: Request) {
 
     const [rows] = await pool.query(query, params);
 
+    // Obtener los archivos adjuntos para cada requisición
+    const requisitionIds = (rows as any[]).map(r => r.requisicion_id);
+    const archivosPorRequisicion: Record<number, Array<{
+      archivo_id: number;
+      requisicion_id: number;
+      nombre_archivo: string;
+      ruta_archivo: Buffer;
+      tipo_mime: string;
+      tamano: number;
+      fecha_creacion: Date;
+    }>> = {};
+    
+    if (requisitionIds.length > 0) {
+      const [archivos] = await pool.query(
+        'SELECT * FROM requisicion_archivos WHERE requisicion_id IN (?)',
+        [requisitionIds]
+      ) as [any[], any];
+      
+      // Organizar archivos por requisición
+      (archivos as Array<{
+        archivo_id: number;
+        requisicion_id: number;
+        nombre_archivo: string;
+        ruta_archivo: Buffer;
+        tipo_mime: string;
+        tamano: number;
+        fecha_creacion: Date;
+      }>).forEach(archivo => {
+        if (!archivosPorRequisicion[archivo.requisicion_id]) {
+          archivosPorRequisicion[archivo.requisicion_id] = [];
+        }
+        archivosPorRequisicion[archivo.requisicion_id].push(archivo);
+      });
+    }
+
     const requisitions = (rows as any[]).map(row => {
       let imagenes: string[] = [];
 
-      // Si existe un archivo PDF en el campo pdf
-      if (row.pdf && row.pdf.length > 0) {
-        const isPDF =
-          row.pdf[0] === 0x25 && row.pdf[1] === 0x50 && row.pdf[2] === 0x44 && row.pdf[3] === 0x46; // %PDF
-        const mimeType = isPDF ? 'application/pdf' : 'image/jpeg';
-        const base64File = row.pdf.toString('base64');
-        imagenes = [`data:${mimeType};base64,${base64File}`];
+      // Obtener archivos de la tabla requisicion_archivos
+      const archivos = archivosPorRequisicion[row.requisicion_id] || [];
+      if (archivos.length > 0) {
+        imagenes = archivos.map(archivo => {
+          const isPDF = archivo.ruta_archivo && archivo.ruta_archivo.length > 0 &&
+                       archivo.ruta_archivo[0] === 0x25 && 
+                       archivo.ruta_archivo[1] === 0x50 && 
+                       archivo.ruta_archivo[2] === 0x44 && 
+                       archivo.ruta_archivo[3] === 0x46; // %PDF
+          
+          const mimeType = isPDF ? 'application/pdf' : 'image/jpeg';
+          const base64File = archivo.ruta_archivo.toString('base64');
+          return `data:${mimeType};base64,${base64File}`;
+        });
       }
 
       const fechaSolicitud = row.fecha_solicitud
@@ -176,7 +274,15 @@ export async function GET(request: Request) {
           ? new Date(row.fecha_creacion).getTime()
           : (row.fecha_solicitud
             ? new Date(row.fecha_solicitud).getTime()
-            : Date.now())
+            : Date.now()),
+            archivos: archivosPorRequisicion[row.requisicion_id]?.map(archivo => ({
+              archivo_id: archivo.archivo_id,
+              nombre_archivo: archivo.nombre_archivo,
+              tipo_mime: archivo.tipo_mime,
+              tamano: archivo.tamano,
+              fecha_creacion: archivo.fecha_creacion,
+              url: `/api/archivos/${archivo.archivo_id}`
+            })) || []
       };
     });
 
