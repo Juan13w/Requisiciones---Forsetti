@@ -7,7 +7,7 @@ import * as fs from 'fs';
 
 // Interfaz para las requisiciones
 interface Requisicion {
-  requisicion_id: number;
+  
   consecutivo: string;
   empresa: string;
   fecha_solicitud: string;
@@ -98,7 +98,7 @@ export async function GET() {
 
     // Configurar columnas de la tabla
     const tableColumn = [
-      'ID',
+      
       'Consecutivo', 
       'Empresa',
       'Fecha Solicitud',
@@ -116,7 +116,7 @@ export async function GET() {
         'Pendiente';
       
       return [
-        String(req.requisicion_id || 'N/A'),
+        
         req.consecutivo || 'N/A',
         req.empresa || 'N/A',
         fechaFormateada,
