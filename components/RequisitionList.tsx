@@ -27,16 +27,50 @@ export default function RequisitionList({
   const [statusFilter, setStatusFilter] = useState("todos")
   
   // Función para formatear fechas
-  const formatDate = (timestamp: number | Date | string) => {
-    const date = new Date(timestamp);
-    const options: Intl.DateTimeFormatOptions = { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    };
-    return date.toLocaleDateString('es-ES', options);
+  const formatDate = (dateInput: number | Date | string | undefined | null): string => {
+    try {
+      // Si el input es undefined o null, devolver un valor por defecto
+      if (dateInput === undefined || dateInput === null) {
+        return 'Sin fecha';
+      }
+
+      let date: Date;
+      
+      // Manejar diferentes tipos de entrada
+      if (typeof dateInput === 'string') {
+        // Si es solo fecha (YYYY-MM-DD), agregar hora media noche
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+          dateInput = `${dateInput}T00:00:00`;
+        }
+        // Si es datetime sin segundos (YYYY-MM-DDTHH:MM), agregar segundos
+        else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dateInput)) {
+          dateInput = `${dateInput}:00`;
+        }
+        date = new Date(dateInput);
+      } else if (typeof dateInput === 'number') {
+        date = new Date(dateInput);
+      } else {
+        date = dateInput; // Ya es un objeto Date
+      }
+      
+      // Verificar si la fecha es válida
+      if (isNaN(date.getTime())) {
+        console.warn('Fecha inválida:', dateInput);
+        return 'Fecha inválida';
+      }
+      
+      // Obtener componentes de la fecha
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = date.toLocaleString('es-ES', { month: 'short' });
+      const year = date.getFullYear();
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      
+      return `${day} ${month} ${year} ${hours}:${minutes}`;
+    } catch (error) {
+      console.error('Error al formatear la fecha:', error, 'Input:', dateInput);
+      return 'Fecha inválida';
+    }
   };
   
   // Función para obtener el color del estado

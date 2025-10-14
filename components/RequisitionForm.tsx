@@ -19,13 +19,28 @@ interface RequisitionFormProps {
 }
 
 export default function RequisitionForm({ onSave, onCancel, initialData }: RequisitionFormProps) {
+  // Función para obtener la fecha y hora actual en formato MySQL (YYYY-MM-DD HH:MM:SS)
+  const getCurrentDateTime = () => {
+    const now = new Date();
+    // Usar los métodos de fecha para obtener cada componente
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    
+    // Formato: YYYY-MM-DD HH:MM:SS
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  };
+
   const [formData, setFormData] = useState<RequisitionFormData>(() => {
     // Si hay initialData, usarlo, de lo contrario crear datos por defecto
     if (initialData) {
       return {
         consecutivo: initialData.consecutivo || `REQ-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
         empresa: initialData.empresa || "",
-        fechaSolicitud: initialData.fechaSolicitud || new Date().toISOString().split("T")[0],
+        fechaSolicitud: initialData.fechaSolicitud || getCurrentDateTime(),
         nombreSolicitante: initialData.nombreSolicitante || "",
         proceso: initialData.proceso || "",
         justificacion: initialData.justificacion || "",
@@ -41,7 +56,7 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
     return {
       consecutivo: `REQ-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
       empresa: "",
-      fechaSolicitud: new Date().toISOString().split("T")[0],
+      fechaSolicitud: getCurrentDateTime(),
       nombreSolicitante: "",
       proceso: "",
       justificacion: "",
@@ -52,6 +67,35 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
       estado: 'pendiente',
     };
   });
+
+  // Actualizar la hora de la solicitud justo antes de guardar
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validar campos requeridos
+    if (!formData.descripcion?.trim()) {
+      alert("La descripción es requerida");
+      return;
+    }
+    if (!formData.proceso?.trim()) {
+      alert("El proceso es requerido");
+      return;
+    }
+    if (!formData.cantidad || formData.cantidad <= 0) {
+      alert("La cantidad debe ser mayor a cero");
+      return;
+    }
+    
+    // Actualizar la fecha de solicitud con la hora actual justo antes de guardar
+    const updatedFormData = {
+      ...formData,
+      fechaSolicitud: getCurrentDateTime(),
+      estado: formData.estado || 'pendiente'
+    };
+    
+    // Llamar a la función onSave con los datos actualizados
+    onSave(updatedFormData);
+  };
 
   // Lista de empresas disponibles
   const empresasDisponibles = ["SCI", "EMTRA", "INPROSALUD", "SIMADRID", "EMTRASUR", "INCORPORANDO", "OTRA_EMPRESA"]; // Ajusta según tus necesidades
@@ -161,33 +205,6 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
         console.error('Error al cargar los archivos:', error);
         alert('Error al cargar uno o más archivos');
       });
-  }
-
-  // Manejador para enviar el formulario
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Validar campos requeridos
-    if (!formData.descripcion?.trim()) {
-      alert("La descripción es requerida")
-      return
-    }
-    if (!formData.proceso?.trim()) {
-      alert("El proceso es requerido")
-      return
-    }
-    if (!formData.cantidad || formData.cantidad <= 0) {
-      alert("La cantidad debe ser mayor a cero")
-      return
-    }
-    
-    // Crear un objeto con los datos del formulario sin el estado
-    const { estado, ...formDataWithoutState } = formData;
-    
-    // Llamar a la función onSave con los datos del formulario
-    onSave({
-      ...formDataWithoutState,
-      estado: estado || 'pendiente'
-    })
   }
 
   const removeImage = (index: number) => {

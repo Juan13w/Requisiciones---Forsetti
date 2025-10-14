@@ -70,22 +70,27 @@ export async function POST(request: Request) {
 
     try {
       // Insertar la requisición sin el campo PDF
-      const [result] = await connection.execute(
-        `INSERT INTO requisicion 
-         (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, descripcion, cantidad, coordinador_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          consecutivo,
-          formData.empresa || '',
-          formData.fechaSolicitud || new Date().toISOString().split('T')[0],
-          formData.nombreSolicitante || '',
-          formData.proceso || '',
-          formData.justificacion || '',
-          formData.descripcion || '',
-          Number(formData.cantidad) || 1,
-          coordinadorId
-        ]
-      ) as any;
+      // Obtener la fecha actual en formato MySQL (YYYY-MM-DD HH:MM:SS)
+      const now = new Date();
+      const tzOffset = now.getTimezoneOffset() * 60000; // offset en milisegundos
+      const localISOTime = new Date(now.getTime() - tzOffset).toISOString();
+      const formattedDate = localISOTime.slice(0, 19).replace('T', ' ');
+      
+     const [result] = await connection.execute(
+  `INSERT INTO requisicion 
+   (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, descripcion, cantidad, coordinador_id)
+   VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?)`,  // <-- Usando NOW() de MySQL
+  [
+    consecutivo,
+    formData.empresa || '',
+    formData.nombreSolicitante || '',
+    formData.proceso || '',
+    formData.justificacion || '',
+    formData.descripcion || '',
+    Number(formData.cantidad) || 1,
+    coordinadorId
+  ]
+) as any;
 
       // Obtener ID insertado
       let insertId: number | null = result?.insertId || null;
