@@ -654,3 +654,12 @@
 .stat-number.red {
   color: #ef4444;
 }
+
+/* Estilo para textos informativos en formularios */
+.info-text {
+  font-size: 0.75rem;
+  color: #6B7280;
+  margin-top: 0.25rem;
+  display: block;
+  line-height: 1.25;
+}

@@ -216,9 +216,16 @@ const Dashboard = () => {
     }
   }
 
+  // Función para abrir el formulario de edición
   const handleEdit = (id: string) => {
-    setEditingId(id);
-    setShowForm(true);
+    setEditingId(id)
+    setShowForm(true)
+  }
+
+  // Función para abrir el formulario de nueva requisición
+  const handleNewRequisition = () => {
+    setEditingId(null) // Asegurarse de que no haya un ID de edición activo
+    setShowForm(true)
   }
 
   const handleDelete = async (id: string) => {
@@ -284,41 +291,41 @@ const Dashboard = () => {
   }
 
 
+  // Función para formatear la fecha al formato YYYY-MM-DD
+  const formatDate = (dateString: string | Date): string => {
+    if (!dateString) return new Date().toISOString().split('T')[0];
+    
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return new Date().toISOString().split('T')[0];
+    
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}`;
+  };
+
   // Preparar datos iniciales para el formulario
-  const getInitialData = (): RequisitionFormData => {
+  const getInitialData = (): RequisitionFormData | undefined => {
     if (editingId) {
       const requisition = requisitions.find((r) => r.id === editingId);
       if (requisition) {
         return {
           consecutivo: requisition.consecutivo || '',
           empresa: requisition.empresa || '',
-          fechaSolicitud: requisition.fechaSolicitud || new Date().toISOString().split('T')[0],
+          fechaSolicitud: formatDate(requisition.fechaSolicitud || new Date()),
           nombreSolicitante: requisition.nombreSolicitante || '',
           proceso: requisition.proceso || '',
           justificacion: requisition.justificacion || '',
           descripcion: requisition.descripcion || '',
           cantidad: requisition.cantidad || 0,
           estado: requisition.estado || 'pendiente',
-          imagenes: requisition.imagenes || [],
+          imagenes: Array.isArray(requisition.imagenes) ? requisition.imagenes : [],
           comentarioRechazo: requisition.comentarioRechazo || '',
         };
       }
     }
-    
-    // Valores por defecto para un nuevo formulario
-    return {
-      consecutivo: `REQ-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-      empresa: userData?.empresa || "",
-      nombreSolicitante: userData?.email?.split("@")[0] || "",
-      proceso: "",
-      justificacion: "",
-      descripcion: "",
-      cantidad: 1,
-      imagenes: [],
-      fechaSolicitud: new Date().toISOString().split("T")[0],
-      estado: 'pendiente',
-      comentarioRechazo: ""
-    };
+    return undefined; // Devolver undefined cuando no hay edición
   };
 
   const initialData = getInitialData();

@@ -20,8 +20,26 @@ interface RequisitionFormProps {
 
 export default function RequisitionForm({ onSave, onCancel, initialData }: RequisitionFormProps) {
   const [formData, setFormData] = useState<RequisitionFormData>(() => {
-    const defaultData: RequisitionFormData = {
-      consecutivo: "",
+    // Si hay initialData, usarlo, de lo contrario crear datos por defecto
+    if (initialData) {
+      return {
+        consecutivo: initialData.consecutivo || `REQ-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        empresa: initialData.empresa || "",
+        fechaSolicitud: initialData.fechaSolicitud || new Date().toISOString().split("T")[0],
+        nombreSolicitante: initialData.nombreSolicitante || "",
+        proceso: initialData.proceso || "",
+        justificacion: initialData.justificacion || "",
+        descripcion: initialData.descripcion || "",
+        cantidad: initialData.cantidad || 1,
+        imagenes: initialData.imagenes || [],
+        comentarioRechazo: initialData.comentarioRechazo || "",
+        estado: initialData.estado || 'pendiente',
+      };
+    }
+    
+    // Datos por defecto para una nueva requisición
+    return {
+      consecutivo: `REQ-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
       empresa: "",
       fechaSolicitud: new Date().toISOString().split("T")[0],
       nombreSolicitante: "",
@@ -33,8 +51,6 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
       comentarioRechazo: "",
       estado: 'pendiente',
     };
-    
-    return initialData ? { ...defaultData, ...initialData } : defaultData;
   });
 
   // Lista de empresas disponibles
@@ -246,19 +262,26 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
                 </select>
               )}
             </div>
-  
-            <div className="form-field">
+              <div className="form-field">
               <label className="form-label">Fecha de Solicitud</label>
-              <input
-                type="date"
-                name="fechaSolicitud"
-                value={formData.fechaSolicitud}
-                onChange={handleChange}
-                className="form-input"
-                required
-              />
-            </div>
-  
+              <div className="relative">
+                <input
+                  type="date"
+                  name="fechaSolicitud"
+                  value={formData.fechaSolicitud}
+                  onChange={handleChange}
+                  className="form-input bg-gray-100 cursor-not-allowed"
+                  readOnly
+                  required
+                />
+              </div>
+
+             
+           <div className="mt-1">
+             <span className="info-text">La fecha se establece automáticamente</span>
+           </div>
+        </div>
+
             {/* Campo oculto para el nombre del solicitante */}
             <input
               type="hidden"
