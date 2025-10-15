@@ -30,6 +30,7 @@
   grid-column: 1 / -1;
   width: 100%;
   max-width: 100%;
+  background-color: #000203;
 }
 
 /* Títulos de gráficos */
@@ -44,7 +45,7 @@
 
 /* Resumen de Procesos */
 .resumen-procesos {
-  background: white;
+  background: rgb(0, 0, 0);
   border: 1px solid #e2e8f0;
   border-radius: 0.5rem;
   overflow: hidden;
@@ -52,7 +53,7 @@
 }
 
 .resumen-procesos-header {
-  background-color: #f8fafc;
+  background-color: #000203;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -118,8 +119,7 @@
   justify-content: space-between;
   align-items: center;
 }
-
-.resumen-procesos-total-text {
+BFA181.resumen-procesos-total-text {
   font-size: 0.875rem;
   font-weight: 500;
   color: #475569;

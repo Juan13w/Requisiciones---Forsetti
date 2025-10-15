@@ -111,46 +111,32 @@ export default function RequisitionDetails({ requisition, onClose }: Requisition
                           const pdfWindow = window.open("", "_blank");
                           if (pdfWindow) {
                             const html = `
-                              <!DOCTYPE html>
-                              <html>
-                                <head>
-                                  <title>${archivo.nombre_archivo}</title>
-                                  <style>
-                                    body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
-                                    iframe { width: 100%; height: 100%; border: none; }
-                                    .pdf-container { position: relative; width: 100%; height: 100vh; }
-                                    .pdf-toolbar { 
-                                      position: fixed; 
-                                      top: 0; 
-                                      left: 0; 
-                                      right: 0; 
-                                      background: #f5f5f5; 
-                                      padding: 10px; 
-                                      text-align: right; 
-                                      z-index: 1000;
-                                      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                                    }
-                                    .pdf-content { 
-                                      padding-top: 50px; 
-                                      height: calc(100% - 50px); 
-                                    }
-                                  </style>
-                                </head>
-                                <body>
-                                  <div class="pdf-toolbar">
-                                    <a href="${archivo.url}" download="${archivo.nombre_archivo}" class="btn btn-primary">
-                                      Descargar PDF
-                                    </a>
-                                  </div>
-                                  <div class="pdf-content">
-                                    <iframe src="${archivo.url}" type="${archivo.tipo_mime}">
-                                      <p>Tu navegador no soporta la visualización de PDFs. 
-                                      <a href="${archivo.url}" download>Descarga el PDF</a>.</p>
-                                    </iframe>
-                                  </div>
-                                </body>
-                              </html>
-                            `;
+                    <!DOCTYPE html>
+                    <html>
+                      <head>
+                        <title>${archivo.nombre_archivo}</title>
+                        <style>
+                          body, html { 
+                            margin: 0; 
+                            padding: 0; 
+                            height: 100%; 
+                            overflow: hidden; 
+                          }
+                          iframe { 
+                            width: 100%; 
+                            height: 100%; 
+                            border: none; 
+                          }
+                        </style>
+                      </head>
+                      <body>
+                        <iframe src="${archivo.url}" type="${archivo.tipo_mime}">
+                          <p>Tu navegador no soporta la visualización de PDFs. 
+                          <a href="${archivo.url}" download>Descarga el PDF</a>.</p>
+                        </iframe>
+                      </body>
+                    </html>
+                  `;
                             pdfWindow.document.open();
                             pdfWindow.document.write(html);
                             pdfWindow.document.close();

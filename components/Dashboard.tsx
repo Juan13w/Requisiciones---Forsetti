@@ -398,7 +398,7 @@ const Dashboard = () => {
                 </div>
                 <div className="stat-card-body">
                   <span className="stat-number">{requisitions.length}</span>
-                  <p>Presupuesto total: $NaN</p>
+                  <p>Requisiciones totales</p>
                 </div>
               </div>
 

@@ -7,13 +7,12 @@
 
 /* Navigation */
 .dashboard-nav {
-  /* Enhanced navigation with gradient and better shadow */
-  background: linear-gradient(135deg, #0a213f80 100%, #001f42 100%);
+  background: #000000;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   position: sticky;
   top: 0;
   z-index: 50;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid #333333;
 }
 
 .nav-container {
@@ -631,7 +630,7 @@
 .stat-card-body .stat-number {
   font-size: 2.5rem;
   font-weight: 700;
-  color: #ffffff;
+  color: #1e293b;
   display: block;
   margin-bottom: 0.5rem;
 }
@@ -653,13 +652,4 @@
 
 .stat-number.red {
   color: #ef4444;
-}
-
-/* Estilo para textos informativos en formularios */
-.info-text {
-  font-size: 0.75rem;
-  color: #6B7280;
-  margin-top: 0.25rem;
-  display: block;
-  line-height: 1.25;
 }
