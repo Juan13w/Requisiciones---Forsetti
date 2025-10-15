@@ -19,19 +19,12 @@ interface RequisitionFormProps {
 }
 
 export default function RequisitionForm({ onSave, onCancel, initialData }: RequisitionFormProps) {
-  // Función para obtener la fecha y hora actual en formato MySQL (YYYY-MM-DD HH:MM:SS)
+  // Función para obtener la fecha actual en formato YYYY-MM-DD (compatible con input type="date")
   const getCurrentDateTime = () => {
     const now = new Date();
-    // Usar los métodos de fecha para obtener cada componente
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    
-    // Formato: YYYY-MM-DD HH:MM:SS
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    // Ajustar por la zona horaria local
+    const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000));
+    return localDate.toISOString().split('T')[0];
   };
 
   const [formData, setFormData] = useState<RequisitionFormData>(() => {
