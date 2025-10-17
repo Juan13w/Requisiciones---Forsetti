@@ -16,10 +16,11 @@ export interface Requisition {
   nombreSolicitante: string;
   proceso: string;
   justificacion: string;
+  justificacion_ti?: string; // Nuevo campo para justificación de TI
   descripcion: string;
   cantidad: number;
   imagenes?: string[]; // Mantenemos esto por compatibilidad
-  archivos?: ArchivoAdjunto[]; // Nueva propiedad para los archivos adjuntos
+  archivos?: ArchivoAdjunto[]; // Propiedad para los archivos adjuntos
   estado: 'pendiente' | 'aprobada' | 'rechazada' | 'correccion';
   fechaCreacion: number; // timestamp
   intentosRevision?: number;

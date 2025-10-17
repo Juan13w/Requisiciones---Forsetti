@@ -78,14 +78,15 @@ export async function POST(request: Request) {
       
      const [result] = await connection.execute(
   `INSERT INTO requisicion 
-   (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, descripcion, cantidad, coordinador_id)
-   VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?)`,  // <-- Usando NOW() de MySQL
+   (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, justificacion_ti, descripcion, cantidad, coordinador_id)
+   VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)`,
   [
     consecutivo,
     formData.empresa || '',
     formData.nombreSolicitante || '',
     formData.proceso || '',
     formData.justificacion || '',
+    formData.justificacion_ti || '',
     formData.descripcion || '',
     Number(formData.cantidad) || 1,
     coordinadorId
@@ -187,8 +188,12 @@ export async function GET(request: Request) {
     const coordinadorId = searchParams.get('coordinadorId');
 
     let query = `
-      SELECT r.*, c.correo as coordinador_email, c.empresa as coordinador_empresa,
-             r.comentario_rechazo as comentarioRechazo
+      SELECT 
+        r.requisicion_id, r.consecutivo, r.empresa, r.fecha_solicitud, 
+        r.nombre_solicitante, r.proceso, r.justificacion, r.justificacion_ti,
+        r.descripcion, r.cantidad, r.estado, r.comentario_rechazo as comentarioRechazo,
+        r.intentos_revision, r.fecha_ultimo_rechazo, r.coordinador_id, 
+        c.correo as coordinador_email, c.empresa as coordinador_empresa
       FROM requisicion r
       LEFT JOIN coordinador c ON r.coordinador_id = c.coordinador_id
     `;
@@ -270,16 +275,15 @@ export async function GET(request: Request) {
         nombreSolicitante: row.nombre_solicitante || '',
         proceso: row.proceso || '',
         justificacion: row.justificacion || '',
+        justificacion_ti: row.justificacion_ti || '',
         descripcion: row.descripcion || '',
         cantidad: Number(row.cantidad) || 1,
         imagenes: imagenes,
         estado: row.estado || 'pendiente',
         comentarioRechazo: row.comentarioRechazo || row.comentario_rechazo || '',
-        fechaCreacion: row.fecha_creacion
-          ? new Date(row.fecha_creacion).getTime()
-          : (row.fecha_solicitud
-            ? new Date(row.fecha_solicitud).getTime()
-            : Date.now()),
+        fechaCreacion: row.fecha_solicitud
+          ? new Date(row.fecha_solicitud).getTime()
+          : Date.now(),
             archivos: archivosPorRequisicion[row.requisicion_id]?.map(archivo => ({
               archivo_id: archivo.archivo_id,
               nombre_archivo: archivo.nombre_archivo,

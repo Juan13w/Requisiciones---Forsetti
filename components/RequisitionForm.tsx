@@ -10,6 +10,7 @@ import { AutoCompleteInput } from "./ui/AutoCompleteInput"
 type RequisitionFormData = Omit<Requisition, "id" | "fechaCreacion" | "fechaUltimaModificacion" | "fechaUltimoRechazo" | "intentosRevision"> & {
   imagenes: string[];
   comentarioRechazo?: string;
+  justificacion_ti: string;
 };
 
 interface RequisitionFormProps {
@@ -37,6 +38,7 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
         nombreSolicitante: initialData.nombreSolicitante || "",
         proceso: initialData.proceso || "",
         justificacion: initialData.justificacion || "",
+        justificacion_ti: initialData.justificacion_ti || "",
         descripcion: initialData.descripcion || "",
         cantidad: initialData.cantidad || 1,
         imagenes: initialData.imagenes || [],
@@ -53,6 +55,7 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
       nombreSolicitante: "",
       proceso: "",
       justificacion: "",
+      justificacion_ti: "",
       descripcion: "",
       cantidad: 1,
       imagenes: [],
@@ -93,43 +96,26 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   // Lista de empresas disponibles
   const empresasDisponibles = ["SCI", "EMTRA", "INPROSALUD", "SIMADRID", "EMTRASUR", "INCORPORANDO", "OTRA_EMPRESA"]; // Ajusta según tus necesidades
   
-  // Cargar la empresa del coordinador desde localStorage
+  // Cargar datos del coordinador desde localStorage
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      console.log('No estamos en el navegador');
-      return;
-    }
-    
-    console.log('Buscando datos de usuario en localStorage...');
-    const usuarioData = localStorage.getItem('usuarioData');
-    
+    if (typeof window === 'undefined') return;
+
+    const usuarioData = localStorage.getItem('usuario');
     if (usuarioData) {
       try {
         const user = JSON.parse(usuarioData);
         console.log('Datos de usuario encontrados:', user);
         
-        if (user.empresa) {
-          console.log('Empresa encontrada en datos de usuario');
-          // Solo establecer la empresa si no es 'multiple'
-          if (user.empresa.toLowerCase() !== 'multiple') {
-            console.log('Estableciendo empresa fija:', user.empresa);
-            setFormData(prev => ({
-              ...prev,
-              empresa: user.empresa,
-              nombreSolicitante: user.email || ''
-            }));
-          } else {
-            console.log('Usuario puede seleccionar entre múltiples empresas');
-            // No establecemos la empresa, se mostrará el selector
-          }
-        } else {
-          console.log('No se encontró empresa en los datos del usuario');
+        // Establecer el correo del usuario como solicitante si está disponible
+        if (user.email) {
+          setFormData(prev => ({
+            ...prev,
+            nombreSolicitante: user.email
+          }));
         }
       } catch (error) {
         console.error('Error al procesar los datos del usuario:', error);
       }
-    } else {
-      console.log('No se encontraron datos de usuario en localStorage');
     }
   }, []);
 
@@ -216,19 +202,34 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   }`
 
   return (
-    <div className="requisition-form-container fade-in">
-      <div className="form-header">
-        <h2 className="form-title">
-          {initialData ? "✏️ Editar Requisición" : "📝 Nueva Requisición"}
-        </h2>
-        <p className="form-subtitle">
-          {initialData
-            ? "Actualiza los datos de la requisición"
-            : "Completa el formulario para crear una nueva requisición"}
-        </p>
+    <div className="requisition-form-container fade-in overflow-hidden">
+      <div className="encabezado-requisition-form">
+      {/* Columna 1: Info */}
+      <div className="info-requisition-form">
+        <p><strong>Controlado:</strong> SI</p>
+        <p><strong>Código:</strong> LO-FO12</p>
+        <p><strong>Vigencia:</strong> 2025-07-03</p>
+        <p><strong>Versión:</strong> 03</p>
       </div>
-  
-      <div className="form-content">
+
+      {/* Columna 2: Título */}
+      <div className="titulo-requisition-form">
+        <h2>REQUISICIÓN DE COMPRAS</h2>
+      </div>
+
+      {/* Columna 3: Logo */}
+      <div className="logo-requisition-form">
+        <img src="/images/imagenes/logo4.png" alt="Logo SC" />
+      </div>
+    </div>
+    
+    <div className="justify-content-center py-4 w-100">
+      
+    </div>
+
+
+      
+      <div className="form-content p-6">
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <div className="form-field">
@@ -246,31 +247,20 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   
             <div className="form-field">
               <label className="form-label">Empresa</label>
-              {formData.empresa && formData.empresa.toLowerCase() !== "multiple" ? (
-                <input
-                  type="text"
-                  name="empresa"
-                  value={formData.empresa}
-                  readOnly
-                  className="form-input w-full bg-gray-100"
-                  required
-                />
-              ) : (
-                <select
-                  name="empresa"
-                  value={formData.empresa}
-                  onChange={handleChange}
-                  className="form-input w-full"
-                  required
-                >
-                  <option value="">Seleccione una empresa</option>
-                  {empresasDisponibles.map((emp) => (
-                    <option key={emp} value={emp}>
-                      {emp.charAt(0).toUpperCase() + emp.slice(1)}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <select
+                name="empresa"
+                value={formData.empresa}
+                onChange={handleChange}
+                className="form-input w-full"
+                required
+              >
+                <option value="">Seleccione una empresa</option>
+                {empresasDisponibles.map((emp) => (
+                  <option key={emp} value={emp}>
+                    {emp.charAt(0).toUpperCase() + emp.slice(1)}
+                  </option>
+                ))}
+              </select>
             </div>
               <div className="form-field">
               <label className="form-label">Fecha de Solicitud</label>
@@ -320,8 +310,26 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
                 onChange={handleChange}
                 className="form-input form-textarea"
                 required
-                placeholder="Describe la justificación de esta requisición"
+                rows={3}
+                placeholder="Describa la justificación de la solicitud"
               />
+            </div>
+
+            <div className="form-field">
+              <label className="form-label">Justificación de TI</label>
+              <select
+                name="justificacion_ti"
+                value={formData.justificacion_ti}
+                onChange={handleChange}
+                className="form-input w-full"
+                required
+              >
+                <option value="">Seleccione una opción</option>
+                <option value="Deterioro">Deterioro</option>
+                <option value="Daño">Daño</option>
+                <option value="Cargo nuevo">Cargo nuevo</option>
+                <option value="Cargo de reemplazo">Cargo de reemplazo</option>
+              </select>
             </div>
   
             <div className="form-field full-width">

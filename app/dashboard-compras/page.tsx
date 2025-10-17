@@ -27,6 +27,7 @@ interface RequisicionDB {
   id: string;
   requisicion_id: number;
   consecutivo: string | null;
+  justificacion_ti?: string;
   empresa: string;
   fechaSolicitud: string;
   nombreSolicitante: string;
@@ -108,6 +109,7 @@ export default function DashboardCompras() {
     nombreSolicitante: req.nombreSolicitante || req.nombre_solicitante || '',
     proceso: req.proceso || '',
     justificacion: req.justificacion || null,
+    justificacion_ti: req.justificacion_ti || '',
     descripcion: req.descripcion || '',
     cantidad: req.cantidad || 0,
     imagenes: req.imagenes || (req.img ? [req.img] : []),
@@ -628,11 +630,11 @@ case 'correccion':
       {/* EMPRESAS - TARJETAS DE FILTRO */}
       <div className="mt-10">
         <div className="section-header">
-          <h2>Empresas</h2>
-          <p className="section-description">Selecciona una empresa para ver sus requisiciones</p>
+          <h2 className="text-white">Empresas</h2>
+          <p className="section-description text-white">Selecciona una empresa para ver sus requisiciones</p>
         </div>
         {empresasError && (
-          <div className="alert error mt-3">
+          <div className="alert error mt-3 text-white">
             <AlertCircle className="icon" /> {empresasError}
           </div>
         )}
@@ -646,7 +648,7 @@ case 'correccion':
             disabled={empresasLoading}
           >
             <div className="text-sm text-gray-500">Todas las empresas</div>
-            <div className="text-2xl font-semibold mt-1">{totalRequisiciones}</div>
+            <div className="text-2xl font-semibold mt-1 text-white">{totalRequisiciones}</div>
           </button>
 
           {/* Tarjetas por empresa */}
@@ -665,7 +667,7 @@ case 'correccion':
                 title={`Ver requisiciones de ${e}`}
               >
                 <div className="text-sm text-gray-500">{e}</div>
-                <div className="text-2xl font-semibold mt-1">{countByEmpresa[e] || 0}</div>
+                <div className="text-2xl font-semibold mt-1 text-white">{countByEmpresa[e] || 0}</div>
               </button>
             ))}
         </div>
@@ -681,7 +683,7 @@ case 'correccion':
         </div>
 
         {/* Filtros de búsqueda */}
-        <div className="filters-container mb-6 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="filters-container mb-6 p-4 bg-black rounded-lg shadow-sm border border-gray-200">
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             {/* Filtro de búsqueda */}
             <div className="relative flex-1">
@@ -698,18 +700,18 @@ case 'correccion':
             </div>
             
             {/* Filtro por estado */}
-            <div className="w-full sm:w-48">
+            <div className="w-full sm:w-48 ">
               <select
-                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 border"
+                className="block w-full rounded-md text-white border-2 border-white  shadow-sm focus:border-white focus:ring-white sm:text-sm py-2"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as Estado | 'todos')}
               >
-                <option value="todos">Todos los estados</option>
-                <option value="pendiente">Pendiente</option>
-                <option value="aprobada">Aprobada</option>
-                <option value="rechazada">Rechazada</option>
-                <option value="correccion">En corrección</option>
-                <option value="cerrada">Cerrada</option>
+                <option className="text-gray-800" value="todos">Todos los estados</option>
+                <option className="text-gray-800" value="pendiente">Pendiente</option>
+                <option className="text-gray-800" value="aprobada">Aprobada</option>
+                <option className="text-gray-800" value="rechazada">Rechazada</option>
+                <option className="text-gray-800" value="correccion">En corrección</option>
+                <option className="text-gray-800" value="cerrada">Cerrada</option>
               </select>
             </div>
             
@@ -1119,17 +1121,23 @@ case 'correccion':
                 <p>{showDetailModal.req.descripcion}</p>
               </div>
 
-              <div className="detail-item-full">
-                <label>Cantidad:</label>
-                <p>{showDetailModal.req.cantidad}</p>
-              </div>
-
               {showDetailModal.req.justificacion && (
                 <div className="detail-item-full">
                   <label>Justificación:</label>
                   <p>{showDetailModal.req.justificacion}</p>
                 </div>
               )}
+
+              <div className="detail-item-full">
+                <label>Justificación de TI:</label>
+                <p className="justification-ti">
+                  {showDetailModal.req.justificacion_ti ? (
+                    <span className="justification-text">{showDetailModal.req.justificacion_ti}</span>
+                  ) : (
+                    <span className="no-justification">No se ha especificado una justificación de TI</span>
+                  )}
+                </p>
+              </div>
 
                           {/* Sección de estado de corrección o rechazo */}
               {(showDetailModal.req.estado === 'rechazada' || showDetailModal.req.estado === 'correccion') && (

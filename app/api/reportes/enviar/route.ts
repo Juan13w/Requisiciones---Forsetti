@@ -42,6 +42,24 @@ async function generatePdfReport(data: any) {
   doc.setFontSize(16);
   doc.setTextColor(40, 62, 80);
   doc.text('REPORTE DE REQUISICIONES', pageWidth / 2, 20, { align: 'center' });
+
+  try {
+  const headerPath = path.join(process.cwd(), 'public', 'images', 'imagenes', 'logo4.png');
+  await fs.access(headerPath);
+  const headerImg = await fs.readFile(headerPath);
+  const headerData = `data:image/png;base64,${headerImg.toString('base64')}`;
+
+  // Tamaño y posición
+  const headerWidth = 40;
+  const headerHeight = 20;
+  const xHeader = 15; // Izquierda
+  const yHeader = 5;
+
+  doc.addImage(headerData, 'PNG', xHeader, yHeader, headerWidth, headerHeight);
+} catch (err) {
+  console.error('No se pudo cargar el header:', err);
+}
+
   
   // Información de la empresa y fecha
   doc.setFont('helvetica', 'normal');
@@ -95,7 +113,7 @@ async function generatePdfReport(data: any) {
       lineColor: [221, 221, 221],
     },
     headStyles: {
-      fillColor: [40, 62, 80],
+      fillColor: [230, 126, 34],
       textColor: 255,
       fontStyle: 'bold',
     },
@@ -110,19 +128,7 @@ async function generatePdfReport(data: any) {
       4: { cellWidth: 20 },
       5: { cellWidth: 25 }
     },
-    didDrawPage: function (data: any) {
-      // Footer
-      const pageSize = doc.internal.pageSize;
-      const pageHeight = pageSize.height ? pageSize.height : pageSize.getHeight();
-      doc.setFontSize(8);
-      doc.setTextColor(150);
-      doc.text(
-        `Página ${doc.getNumberOfPages()}`,
-        pageWidth / 2,
-        pageHeight - 10,
-        { align: 'center' }
-      );
-    }
+ 
   });
 
   // Devolver el PDF como un buffer

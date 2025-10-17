@@ -179,7 +179,7 @@
 .stat-value {
   font-size: 2rem;
   font-weight: 700;
-  color: #1e293b;
+  color: #ffffff;
   margin: 0.5rem 0;
   line-height: 1.2;
 }
@@ -432,6 +432,13 @@
   text-align: center;
   white-space: nowrap;
   flex: 1;
+  background-color: #ffffff;
+  margin-left: 10px;
+}
+
+
+.action-btn:hover {
+  background-color: #6eb7ff;
 }
 
 .view-btn {

@@ -74,6 +74,17 @@ export default function RequisitionDetails({ requisition, onClose }: Requisition
             <p>{requisition.justificacion}</p>
           </div>
 
+          <div className="detail-item-full">
+            <label>Justificación de TI:</label>
+            <p className="justification-ti">
+              {requisition.justificacion_ti ? (
+                <span className="justification-text">{requisition.justificacion_ti}</span>
+              ) : (
+                <span className="no-justification">No se ha especificado una justificación de TI</span>
+              )}
+            </p>
+          </div>
+
           {/* Sección de archivos adjuntos */}
           {requisition.archivos && requisition.archivos.length > 0 ? (
             <div className="detail-item-full">

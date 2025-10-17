@@ -233,18 +233,90 @@
 /* Added form-specific styles */
 .requisition-form-container {
   max-width: 700px;
-  margin: 0 auto;
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-  border-radius: 1.5rem;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  margin: 2rem auto;
+  background: white;
+  border-radius: 1rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   overflow: hidden;
   border: 1px solid #e2e8f0;
 }
 
-.form-header {
-  padding: 2rem;
+.encabezado-requisition-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  background: linear-gradient(to right, #ffffff, #ffffff); 
+  border: 1px solid #44444d3d;
+  border-radius: 12px;
+  padding: 1.5rem;
+  gap: 1rem;
+  align-items: center;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.info-requisition-form {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #4b5563; 
+  padding-right: 1rem;
+  border-right: 1px solid #44444d3d;
+}
+
+.info-requisition-form strong {
+  color: #6b7280; 
+  font-weight: 600;
+}
+
+.titulo-requisition-form {
   text-align: center;
-  border-bottom: 1px solid #e2e8f0;
+}
+
+.titulo-requisition-form h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937; 
+  margin: 0;
+}
+
+.logo-requisition-form {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.logo-requisition-form img {
+  max-width: 150px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+
+.form-header {
+  position: relative;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.form-header .form-title {
+  position: relative;
+  z-index: 10;
+  margin: 0;
+  color: white;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.form-header .form-subtitle {
+  position: relative;
+  z-index: 10;
+  margin: 0.5rem 0 0 0;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.form-content {
+  padding: 1.5rem;
 }
 
 .form-title {
@@ -630,7 +702,7 @@
 .stat-card-body .stat-number {
   font-size: 2.5rem;
   font-weight: 700;
-  color: #1e293b;
+  color: #ffffff;
   display: block;
   margin-bottom: 0.5rem;
 }

@@ -18,9 +18,6 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     return NextResponse.json({ success: false, error: 'ID de requisición no válido' }, { status: 400 });
   }
 
-  let body: any = {};
-
-
   try {
     const body = await request.json();
     const { 
@@ -31,6 +28,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       descripcion,
       cantidad,
       justificacion,
+      justificacion_ti,
       proceso,
       imagenes
     } = body;
@@ -77,6 +75,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (justificacion !== undefined) {
       fieldsToUpdate.push('justificacion = ?');
       values.push(justificacion);
+    }
+    if (justificacion_ti !== undefined) {
+      fieldsToUpdate.push('justificacion_ti = ?');
+      values.push(justificacion_ti);
     }
     if (proceso !== undefined) {
       fieldsToUpdate.push('proceso = ?');
@@ -211,15 +213,25 @@ const archivos = Array.isArray(archivosResult) ? archivosResult : [];
   } catch (error) {
     console.error('❌ ERROR EN PUT /api/requisiciones/[id]');
     console.error('➡️ ID recibido:', requisicionId);
-    console.error('➡️ Body recibido:', body);
-    console.error('➡️ Error completo:', error);
-
-    const errorMessage = error instanceof Error ? error.message : 'Error desconocido en el servidor';
-    // Diferenciar entre error de parseo de JSON y otros errores
+    
+    // Verificar si es un error de parseo de JSON
     if (error instanceof SyntaxError) {
-        return NextResponse.json({ success: false, error: 'Cuerpo de la solicitud inválido (no es JSON válido)' }, { status: 400 });
+      console.error('➡️ Error de parseo JSON en el body');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Cuerpo de la solicitud inválido (no es JSON válido)' 
+      }, { status: 400 });
     }
-    return NextResponse.json({ success: false, error: 'Error interno del servidor', details: errorMessage }, { status: 500 });
+
+    // Para otros tipos de errores, mostrar el mensaje de error
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido en el servidor';
+    console.error('➡️ Error completo:', errorMessage);
+    
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Error interno del servidor', 
+      details: errorMessage 
+    }, { status: 500 });
   }
 }
 
@@ -235,9 +247,22 @@ export async function GET(request: Request, { params }: { params: { id: string }
   try {
     const [rows] = await query<any[]>(`
       SELECT 
-        r.*,
+        r.requisicion_id as id,
+        r.consecutivo,
+        r.empresa,
+        r.fecha_solicitud as fechaSolicitud,
+        r.nombre_solicitante as nombreSolicitante,
+        r.proceso,
+        r.justificacion,
+        r.justificacion_ti,
+        r.descripcion,
+        r.cantidad,
+        r.estado,
+        r.fecha_creacion as fechaCreacion,
+        r.intentos_revision as intentosRevision,
         COALESCE(r.comentario_rechazo, '') as comentarioRechazo,
-        DATE_FORMAT(r.fecha_ultimo_rechazo, '%Y-%m-%d %H:%i:%s') as fechaUltimoRechazo
+        DATE_FORMAT(r.fecha_ultimo_rechazo, '%Y-%m-%d %H:%i:%s') as fechaUltimoRechazo,
+        DATE_FORMAT(r.fecha_ultima_modificacion, '%Y-%m-%d %H:%i:%s') as fechaUltimaModificacion
       FROM requisicion r
       WHERE r.requisicion_id = ?
     `, [requisicionId]);
@@ -246,14 +271,28 @@ export async function GET(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ success: false, error: 'Requisición no encontrada' }, { status: 404 });
     }
     
+    // Crear un objeto con los datos de la requisición
+    const requisicionData = {
+      ...rows[0],
+      // Aseguramos que estos campos siempre estén definidos
+      comentarioRechazo: rows[0].comentarioRechazo || '',
+      fechaUltimoRechazo: rows[0].fechaUltimoRechazo || null,
+      justificacion_ti: rows[0].justificacion_ti || '' // Aseguramos que siempre tenga un valor
+    };
+
+    // Si hay archivos, los incluimos en la respuesta
+    const [archivos] = await query<any[]>(
+      'SELECT * FROM archivos_adjuntos WHERE requisicion_id = ?', 
+      [requisicionId]
+    );
+
+    if (archivos && archivos.length > 0) {
+      requisicionData.archivos = archivos;
+    }
+
     return NextResponse.json({ 
       success: true, 
-      data: {
-        ...rows[0],
-        // Aseguramos que estos campos siempre estén definidos
-        comentarioRechazo: rows[0].comentarioRechazo || '',
-        fechaUltimoRechazo: rows[0].fechaUltimoRechazo || null
-      }
+      data: requisicionData
     });
   } catch (error) {
     console.error('Error en GET /api/requisiciones/[id]:', error);
