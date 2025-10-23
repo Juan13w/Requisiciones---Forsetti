@@ -291,15 +291,35 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   
             <div className="form-field">
               <label className="form-label">Proceso</label>
-              <input
-                type="text"
+              <select
                 name="proceso"
                 value={formData.proceso}
                 onChange={handleChange}
-                className="form-input"
+                className="form-input w-full"
                 required
-                placeholder="Proceso al que pertenece la requisición"
-              />
+              >
+                <option value="">Seleccione un proceso</option>
+                <option value="LOGISTICA">LOGISTICA</option>
+                <option value="TRANSITO XPRESS">TRANSITO XPRESS</option>
+                <option value="COMERCIAL">COMERCIAL</option>
+                <option value="SST - CALIDAD">SST - CALIDAD</option>
+                <option value="FINANCIERA">FINANCIERA</option>
+                <option value="ALMACEN">ALMACEN</option>
+                <option value="PRODUCCION">PRODUCCION</option>
+                <option value="TESORERIA">TESORERIA</option>
+                <option value="GESTION HUMANA">GESTION HUMANA</option>
+                <option value="MARKETING">MARKETING</option>
+                <option value="LEGAL">LEGAL</option>
+                <option value="DOCUMENTAL">DOCUMENTAL</option>
+                <option value="SERVICIOS GENERALES">SERVICIOS GENERALES</option>
+                <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+                <option value="TRANSITO Y TRANSPORTE">TRANSITO Y TRANSPORTE</option>
+                <option value="OPERACIONES">OPERACIONES</option>
+                <option value="IN HOUSE">IN HOUSE</option>
+                <option value="INNOVACION TECNOLOGIA">INNOVACION TECNOLOGIA</option>
+                <option value="GERENCIA">GERENCIA</option>
+                <option value="ESCUELAS DE CONDUCCION">ESCUELAS DE CONDUCCION</option>
+              </select>
             </div>
   
             <div className="form-field">
