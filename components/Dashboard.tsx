@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import Link from "next/link"
 import { v4 as uuidv4 } from "uuid" 
 import RequisitionForm from "./RequisitionForm"
@@ -13,6 +13,7 @@ import "../styles/Dashboard.css"
 type RequisitionFormData = Omit<Requisition, "id" | "fechaCreacion" | "fechaUltimaModificacion" | "fechaUltimoRechazo" | "intentosRevision"> & {
   imagenes: string[];
   comentarioRechazo?: string;
+  justificacion_ti: string;
 };
 
 const STORAGE_KEY = "requisiciones"
@@ -307,6 +308,11 @@ const Dashboard = () => {
 
   // Preparar datos iniciales para el formulario
   const getInitialData = (): RequisitionFormData | undefined => {
+    // Si aún no se han cargado las requisiciones, retornar undefined
+    if (isLoading || !requisitions) {
+      return undefined;
+    }
+
     if (editingId) {
       const requisition = requisitions.find((r) => r.id === editingId);
       if (requisition) {
@@ -322,13 +328,15 @@ const Dashboard = () => {
           estado: requisition.estado || 'pendiente',
           imagenes: Array.isArray(requisition.imagenes) ? requisition.imagenes : [],
           comentarioRechazo: requisition.comentarioRechazo || '',
+          justificacion_ti: requisition.justificacion_ti || '',
         };
       }
     }
     return undefined; // Devolver undefined cuando no hay edición
   };
 
-  const initialData = getInitialData();
+  // Memoizar los datos iniciales para evitar cálculos innecesarios
+  const initialData = useMemo(() => getInitialData(), [editingId, requisitions, isLoading]);
 
   return (
     <div className="dashboard">
@@ -374,14 +382,20 @@ const Dashboard = () => {
       </nav>
 
       <main className="dashboard-content">
-        {showForm ? (
+        {isLoading ? (
+          <div className="loading-container">
+            <div className="loading-spinner"></div>
+            <p>Cargando requisiciones...</p>
+          </div>
+        ) : showForm ? (
           <RequisitionForm
+            key={editingId || 'new'} // Forzar recreación del formulario al cambiar la edición
             onSave={handleSave}
             onCancel={() => {
               setShowForm(false)
               setEditingId(null)
             }}
-            initialData={getInitialData()}
+            initialData={initialData}
           />
         ) : (
           <>

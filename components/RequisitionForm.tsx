@@ -96,26 +96,47 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   // Lista de empresas disponibles
   const empresasDisponibles = ["SCI", "EMTRA", "INPROSALUD", "SIMADRID", "EMTRASUR", "INCORPORANDO", "OTRA_EMPRESA"]; // Ajusta según tus necesidades
   
-  // Cargar datos del coordinador desde localStorage
+  // Cargar datos del usuario desde localStorage
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const usuarioData = localStorage.getItem('usuario');
+    const usuarioData = localStorage.getItem('usuarioData');
     if (usuarioData) {
       try {
         const user = JSON.parse(usuarioData);
         console.log('Datos de usuario encontrados:', user);
         
-        // Establecer el correo del usuario como solicitante si está disponible
-        if (user.email) {
-          setFormData(prev => ({
+        // Verificar si el usuario es un coordinador con empresa asignada
+        const isCoordinatorWithCompany = user.rol === 'coordinador' && user.empresa;
+        const isSpecialUser = user.email === 'rulexor.monasterios@solucionescorp.com.co' || user.empresa === 'multiple';
+        
+        // Actualizar el estado del formulario
+        setFormData(prev => {
+          // Si el usuario es especial o tiene empresa 'multiple', no establecer la empresa automáticamente
+          // pero si es 'multiple', establecer la primera empresa como valor predeterminado
+          const empresaValue = isSpecialUser && user.empresa === 'multiple' 
+            ? empresasDisponibles[0] || '' 
+            : (isCoordinatorWithCompany && !isSpecialUser ? user.empresa : prev.empresa);
+            
+          return {
             ...prev,
-            nombreSolicitante: user.email
-          }));
-        }
+            nombreSolicitante: user.email || '',
+            empresa: empresaValue
+          };
+        });
+        
+        console.log('Estado del formulario actualizado:', {
+          email: user.email,
+          rol: user.rol,
+          empresa: user.empresa,
+          isSpecialUser,
+          shouldSetCompany: isCoordinatorWithCompany && !isSpecialUser
+        });
       } catch (error) {
         console.error('Error al procesar los datos del usuario:', error);
       }
+    } else {
+      console.log('No se encontraron datos de usuario en localStorage');
     }
   }, []);
 
@@ -247,20 +268,30 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   
             <div className="form-field">
               <label className="form-label">Empresa</label>
-              <select
-                name="empresa"
-                value={formData.empresa}
-                onChange={handleChange}
-                className="form-input w-full"
-                required
-              >
-                <option value="">Seleccione una empresa</option>
-                {empresasDisponibles.map((emp) => (
-                  <option key={emp} value={emp}>
-                    {emp.charAt(0).toUpperCase() + emp.slice(1)}
-                  </option>
-                ))}
-              </select>
+              {formData.nombreSolicitante === 'rulexor.monasterios@solucionescorp.com.co' || (formData.empresa && localStorage.getItem('usuarioData') && JSON.parse(localStorage.getItem('usuarioData') || '{}').empresa === 'multiple') ? (
+                <select
+                  name="empresa"
+                  value={formData.empresa}
+                  onChange={handleChange}
+                  className="form-input w-full"
+                  required
+                >
+                  <option value="">Seleccione una empresa</option>
+                  {empresasDisponibles.map((emp) => (
+                    <option key={emp} value={emp}>
+                      {emp.charAt(0).toUpperCase() + emp.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  name="empresa"
+                  value={formData.empresa}
+                  readOnly
+                  className="form-input bg-gray-100 cursor-not-allowed w-full"
+                />
+              )}
             </div>
               <div className="form-field">
               <label className="form-label">Fecha de Solicitud</label>
@@ -342,7 +373,6 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
                 value={formData.justificacion_ti}
                 onChange={handleChange}
                 className="form-input w-full"
-                required
               >
                 <option value="">Seleccione una opción</option>
                 <option value="Deterioro">Deterioro</option>
