@@ -3,6 +3,8 @@ import pool from '@/lib/db';
 import { enviarNotificacionRequisicion } from '@/services/emailService';
 
 export async function POST(request: Request) {
+  let connection = null;
+  
   try {
     const formData = await request.json();
 
@@ -65,33 +67,27 @@ export async function POST(request: Request) {
     console.log('📦 Creando requisición para coordinador ID:', coordinadorId);
 
     // Iniciar transacción
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
     await connection.beginTransaction();
 
     try {
       // Insertar la requisición sin el campo PDF
-      // Obtener la fecha actual en formato MySQL (YYYY-MM-DD HH:MM:SS)
-      const now = new Date();
-      const tzOffset = now.getTimezoneOffset() * 60000; // offset en milisegundos
-      const localISOTime = new Date(now.getTime() - tzOffset).toISOString();
-      const formattedDate = localISOTime.slice(0, 19).replace('T', ' ');
-      
-     const [result] = await connection.execute(
-  `INSERT INTO requisicion 
-   (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, justificacion_ti, descripcion, cantidad, coordinador_id)
-   VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)`,
-  [
-    consecutivo,
-    formData.empresa || '',
-    formData.nombreSolicitante || '',
-    formData.proceso || '',
-    formData.justificacion || '',
-    formData.justificacion_ti || '',
-    formData.descripcion || '',
-    Number(formData.cantidad) || 1,
-    coordinadorId
-  ]
-) as any;
+      const [result] = await connection.execute(
+        `INSERT INTO requisicion 
+         (consecutivo, empresa, fecha_solicitud, nombre_solicitante, proceso, justificacion, justificacion_ti, descripcion, cantidad, coordinador_id)
+         VALUES (?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          consecutivo,
+          formData.empresa || '',
+          formData.nombreSolicitante || '',
+          formData.proceso || '',
+          formData.justificacion || '',
+          formData.justificacion_ti || '',
+          formData.descripcion || '',
+          Number(formData.cantidad) || 1,
+          coordinadorId
+        ]
+      ) as any;
 
       // Obtener ID insertado
       let insertId: number | null = result?.insertId || null;
@@ -128,35 +124,23 @@ export async function POST(request: Request) {
         );
       } catch (histErr) {
         console.warn('⚠️ No se pudo registrar historial:', histErr);
-        throw histErr; // Relanzar para que se maneje en el catch externo
+        throw histErr;
       }
 
       // Confirmar la transacción
       await connection.commit();
-      connection.release();
 
-      // Enviar notificación (opcional)
+      // Enviar notificación asíncronamente (no bloquea la respuesta)
       if (process.env.NOTIFICATION_EMAIL && insertId) {
-        try {
-          const [requisicion] = await connection.query(
-            'SELECT * FROM requisicion WHERE requisicion_id = ?',
-            [insertId]
-          ) as any[];
+        // Liberar la conexión antes de enviar el correo
+        connection.release();
+        connection = null;
 
-          if (requisicion && requisicion.length > 0) {
-            const reqData = requisicion[0];
-
-            await enviarNotificacionRequisicion(process.env.NOTIFICATION_EMAIL, {
-              titulo: `Requisición ${reqData.consecutivo}`,
-              descripcion: reqData.descripcion || 'Sin descripción adicional',
-              fecha_creacion: reqData.fecha_solicitud,
-              creado_por: reqData.nombre_solicitante || 'Usuario desconocido'
-            });
-          }
-        } catch (emailError) {
-          console.error('Error al enviar correo:', emailError);
-          // No relanzamos el error para no fallar la creación de la requisición
-        }
+        // Enviar correo en background sin bloquear la respuesta
+        enviarNotificacionRequisicionAsync(process.env.NOTIFICATION_EMAIL, insertId);
+      } else if (connection) {
+        connection.release();
+        connection = null;
       }
 
       return NextResponse.json({ success: true, id: insertId });
@@ -175,10 +159,54 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     console.error('❌ Error en la función POST:', error);
+    
+    // Asegurar liberar la conexión si existe
+    if (connection) {
+      try {
+        await connection.rollback();
+        connection.release();
+      } catch (releaseError) {
+        console.error('❌ Error liberando conexión:', releaseError);
+      }
+    }
+    
     return NextResponse.json(
       { error: 'Error interno del servidor' },
       { status: 500 }
     );
+  }
+}
+
+// Función asíncrona para enviar notificación sin bloquear
+async function enviarNotificacionRequisicionAsync(email: string, requisicionId: number) {
+  try {
+    // Obtener datos de la requisición para el correo
+    const tempConnection = await pool.getConnection();
+    
+    try {
+      const [requisicion] = await tempConnection.query(
+        'SELECT * FROM requisicion WHERE requisicion_id = ?',
+        [requisicionId]
+      ) as any[];
+
+      if (requisicion && requisicion.length > 0) {
+        const reqData = requisicion[0];
+
+        await enviarNotificacionRequisicion(email, {
+          titulo: `Requisición ${reqData.consecutivo}`,
+          descripcion: reqData.descripcion || 'Sin descripción adicional',
+          fecha_creacion: reqData.fecha_solicitud,
+          creado_por: reqData.nombre_solicitante || 'Usuario desconocido'
+        });
+        
+        console.log('📧 Correo de notificación enviado');
+      }
+    } finally {
+      tempConnection.release();
+    }
+  } catch (emailError) {
+    console.error('❌ Error al enviar correo en background:', emailError);
+    // No relanzamos el error para no afectar la respuesta principal
   }
 }
 
@@ -191,7 +219,9 @@ export async function GET(request: Request) {
       SELECT 
         r.requisicion_id, r.consecutivo, r.empresa, r.fecha_solicitud, 
         r.nombre_solicitante, r.proceso, r.justificacion, r.justificacion_ti,
-        r.descripcion, r.cantidad, r.estado, r.comentario_rechazo as comentarioRechazo,
+        r.descripcion, r.cantidad, r.estado,
+        r.comentario_rechazo as comentarioRechazo,
+        r.comentario_rechazo_f as comentarioRechazoFinal,
         r.intentos_revision, r.fecha_ultimo_rechazo, r.coordinador_id, 
         c.correo as coordinador_email, c.empresa as coordinador_empresa
       FROM requisicion r
@@ -210,6 +240,7 @@ export async function GET(request: Request) {
 
     // Obtener los archivos adjuntos para cada requisición
     const requisitionIds = (rows as any[]).map(r => r.requisicion_id);
+    
     const archivosPorRequisicion: Record<number, Array<{
       archivo_id: number;
       requisicion_id: number;
@@ -217,7 +248,7 @@ export async function GET(request: Request) {
       ruta_archivo: Buffer;
       tipo_mime: string;
       tamano: number;
-      fecha_creacion: Date;
+      fecha_subida: Date;
     }>> = {};
     
     if (requisitionIds.length > 0) {
@@ -234,7 +265,7 @@ export async function GET(request: Request) {
         ruta_archivo: Buffer;
         tipo_mime: string;
         tamano: number;
-        fecha_creacion: Date;
+        fecha_subida: Date;
       }>).forEach(archivo => {
         if (!archivosPorRequisicion[archivo.requisicion_id]) {
           archivosPorRequisicion[archivo.requisicion_id] = [];
@@ -244,27 +275,20 @@ export async function GET(request: Request) {
     }
 
     const requisitions = (rows as any[]).map(row => {
-      let imagenes: string[] = [];
-
-      // Obtener archivos de la tabla requisicion_archivos
-      const archivos = archivosPorRequisicion[row.requisicion_id] || [];
-      if (archivos.length > 0) {
-        imagenes = archivos.map(archivo => {
-          const isPDF = archivo.ruta_archivo && archivo.ruta_archivo.length > 0 &&
-                       archivo.ruta_archivo[0] === 0x25 && 
-                       archivo.ruta_archivo[1] === 0x50 && 
-                       archivo.ruta_archivo[2] === 0x44 && 
-                       archivo.ruta_archivo[3] === 0x46; // %PDF
-          
-          const mimeType = isPDF ? 'application/pdf' : 'image/jpeg';
-          const base64File = archivo.ruta_archivo.toString('base64');
-          return `data:${mimeType};base64,${base64File}`;
-        });
-      }
-
       const fechaSolicitud = row.fecha_solicitud
         ? new Date(row.fecha_solicitud).toISOString()
         : new Date().toISOString();
+
+      // No incluir imágenes en Base64 para evitar errores de hidratación
+      // Los archivos se obtendrán bajo demanda
+      const archivos = archivosPorRequisicion[row.requisicion_id]?.map(archivo => ({
+        archivo_id: archivo.archivo_id,
+        nombre_archivo: archivo.nombre_archivo,
+        tipo_mime: archivo.tipo_mime,
+        tamano: archivo.tamano,
+        fecha_creacion: archivo.fecha_subida, // Mapear fecha_subida -> fecha_creacion
+        url: `/api/archivos/${archivo.archivo_id}`
+      })) || [];
 
       return {
         id: row.requisicion_id.toString(),
@@ -278,20 +302,15 @@ export async function GET(request: Request) {
         justificacion_ti: row.justificacion_ti || '',
         descripcion: row.descripcion || '',
         cantidad: Number(row.cantidad) || 1,
-        imagenes: imagenes,
+        // No incluir imágenes para reducir tamaño de respuesta
+        imagenes: [],
         estado: row.estado || 'pendiente',
         comentarioRechazo: row.comentarioRechazo || row.comentario_rechazo || '',
+        comentarioRechazoFinal: row.comentarioRechazoFinal || row.comentario_rechazo_f || '',
         fechaCreacion: row.fecha_solicitud
           ? new Date(row.fecha_solicitud).getTime()
           : Date.now(),
-            archivos: archivosPorRequisicion[row.requisicion_id]?.map(archivo => ({
-              archivo_id: archivo.archivo_id,
-              nombre_archivo: archivo.nombre_archivo,
-              tipo_mime: archivo.tipo_mime,
-              tamano: archivo.tamano,
-              fecha_creacion: archivo.fecha_creacion,
-              url: `/api/archivos/${archivo.archivo_id}`
-            })) || []
+        archivos: archivos
       };
     });
 

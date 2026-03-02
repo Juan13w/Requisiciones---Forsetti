@@ -2,6 +2,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Eye, X, Search, Download } from 'lucide-react';
@@ -30,6 +32,20 @@ type Requisicion = {
   img: string;
   comentario_rechazo?: string;
 };
+
+// Portal sencillo para renderizar el modal en document.body
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) return null;
+
+  return createPortal(children, document.body);
+}
+
 
 export default function SolicitudesPage() {
   const [solicitudes, setSolicitudes] = useState<Requisicion[]>([]);
@@ -192,114 +208,119 @@ export default function SolicitudesPage() {
         </div>
       </div>
 
-{/* Modal de Detalles */}
-{selectedReq && (
-  <div 
-    className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-    onClick={closeDetails}
-  >
-    <div 
-      className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <button 
-        className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
-        onClick={closeDetails}
-        aria-label="Cerrar"
-      >
-        <X className="h-6 w-6" />
-      </button>
-
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Detalles de la Requisición</h2>
-          <span 
-            className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${
-              selectedReq.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
-              selectedReq.estado === 'aprobada' ? 'bg-green-100 text-green-800' :
-              'bg-red-100 text-red-800'
-            }`}
-          >
-            {selectedReq.estado.toUpperCase()}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium text-gray-500">Consecutivo</h3>
-              <p className="font-medium">{selectedReq.consecutivo}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-500">Empresa</h3>
-              <p>{selectedReq.empresa}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-500">Fecha de Solicitud</h3>
-              <p>{new Date(selectedReq.fecha_solicitud).toLocaleDateString()}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-500">Proceso</h3>
-              <p>{selectedReq.proceso}</p>
-            </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-500">Cantidad</h3>
-              <p>{selectedReq.cantidad}</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-medium text-gray-500">Descripción</h3>
-              <p className="whitespace-pre-line bg-gray-50 p-3 rounded">
-                {selectedReq.descripcion}
-              </p>
-            </div>
-            {selectedReq.comentario_rechazo && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-500">Comentario de Rechazo</h3>
-                <p className="text-red-600 bg-red-50 p-3 rounded">
-                  {selectedReq.comentario_rechazo}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {selectedReq.img && (
-          <div className="mt-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Imagen Adjunta</h3>
-            <div className="relative w-full h-64 border rounded-lg overflow-hidden">
-              <Image
-                src={selectedReq.img}
-                alt={`Imagen de la requisición ${selectedReq.consecutivo}`}
-                fill
-                className="object-contain"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="flex justify-end space-x-3 pt-4 border-t mt-6">
-          <Button 
-            variant="outline" 
+      {/* Modal de Detalles */}
+      {selectedReq && (
+        <ModalPortal>
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4"
             onClick={closeDetails}
           >
-            Cerrar
-          </Button>
-          {selectedReq.estado === 'pendiente' && (
-            <Button 
-              variant="default"
-              // onClick={() => handleAction(selectedReq.requisicion_id, 'aprobar')}
+            <div 
+              className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto relative"
+              onClick={(e) => e.stopPropagation()}
             >
-              Aprobar
-            </Button>
-          )}
-        </div>
-      </div>
-    </div>
-  </div>
-)}
+              <button 
+                className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+                onClick={closeDetails}
+                aria-label="Cerrar"
+              >
+                <X className="h-6 w-6" />
+              </button>
+
+              <div className="p-6 space-y-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-semibold text-gray-900">Detalles de la Requisición</h2>
+                    <p className="text-sm text-gray-500 mt-1">Revisa la información de la solicitud seleccionada.</p>
+                  </div>
+                  <span 
+                    className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold tracking-wide uppercase mr-10 ${
+                      selectedReq.estado === 'pendiente' ? 'bg-yellow-100 text-yellow-800' :
+                      selectedReq.estado === 'aprobada' ? 'bg-green-100 text-green-800' :
+                      'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {selectedReq.estado}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2 items-baseline">
+                      <h3 className="text-xs font-medium text-gray-500 uppercase col-span-1">Consecutivo</h3>
+                      <p className="font-semibold text-gray-900 col-span-2 break-all">{selectedReq.consecutivo}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 items-baseline">
+                      <h3 className="text-xs font-medium text-gray-500 uppercase col-span-1">Empresa</h3>
+                      <p className="text-gray-900 col-span-2">{selectedReq.empresa}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 items-baseline">
+                      <h3 className="text-xs font-medium text-gray-500 uppercase col-span-1">Fecha de Solicitud</h3>
+                      <p className="text-gray-900 col-span-2">{new Date(selectedReq.fecha_solicitud).toLocaleDateString()}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 items-baseline">
+                      <h3 className="text-xs font-medium text-gray-500 uppercase col-span-1">Proceso</h3>
+                      <p className="text-gray-900 col-span-2">{selectedReq.proceso}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 items-baseline">
+                      <h3 className="text-xs font-medium text-gray-500 uppercase col-span-1">Cantidad</h3>
+                      <p className="text-gray-900 col-span-2">{selectedReq.cantidad}</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-xs font-medium text-gray-500 uppercase mb-1">Descripción</h3>
+                      <div className="whitespace-pre-line bg-gray-50 border border-gray-200 p-3 rounded-md text-sm text-gray-900 min-h-[80px] flex items-start">
+                        <p>{selectedReq.descripcion}</p>
+                      </div>
+                    </div>
+                    {selectedReq.comentario_rechazo && (
+                      <div>
+                        <h3 className="text-xs font-medium text-gray-500 uppercase mb-1">Comentario de Rechazo</h3>
+                        <div className="bg-red-50 border border-red-100 p-3 rounded-md text-sm text-red-700 min-h-[60px] flex items-start">
+                          <p>{selectedReq.comentario_rechazo}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {selectedReq.img && (
+                  <div className="pt-4 border-t">
+                    <h3 className="text-xs font-medium text-gray-500 uppercase mb-2">Imagen Adjunta</h3>
+                    <div className="relative w-full h-64 border rounded-lg overflow-hidden bg-gray-50">
+                      <Image
+                        src={selectedReq.img}
+                        alt={`Imagen de la requisición ${selectedReq.consecutivo}`}
+                        fill
+                        className="object-contain"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end space-x-3 pt-4 border-t mt-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={closeDetails}
+                  >
+                    Cerrar
+                  </Button>
+                  {selectedReq.estado === 'pendiente' && (
+                    <Button 
+                      variant="default"
+                      // onClick={() => handleAction(selectedReq.requisicion_id, 'aprobar')}
+                    >
+                      Aprobar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
     </div>
   );
 }

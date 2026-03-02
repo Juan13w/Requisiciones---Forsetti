@@ -100,3 +100,22 @@
   background-color: #a0c4f8;
   cursor: not-allowed;
 }
+
+.forgot-password-link {
+  text-align: center;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.forgot-link {
+  color: #4a90e2;
+  text-decoration: none;
+  font-size: 0.875rem;
+  transition: color 0.2s;
+}
+
+.forgot-link:hover {
+  color: #3a7bc8;
+  text-decoration: underline;
+}

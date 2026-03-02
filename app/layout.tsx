@@ -36,7 +36,7 @@ html {
 }
         `}</style>
       </head>
-      <body className="flex flex-col min-h-screen">
+      <body className="flex flex-col min-h-screen" suppressHydrationWarning>
         <StyleLoader />
         <main className="flex-grow">
           {children}

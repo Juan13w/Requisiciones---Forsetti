@@ -3,6 +3,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import "./LoginForm.css"
 
 interface LoginFormProps {
@@ -105,6 +106,12 @@ const LoginForm = ({ isOpen, onClose, onLogin }: LoginFormProps) => {
               {loading ? "Iniciando sesión..." : "Iniciar Sesión"}
             </button>
           </form>
+          
+          <div className="forgot-password-link">
+            <Link href="/forgot-password" className="forgot-link">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </div>
         </div>
       </div>
     </div>

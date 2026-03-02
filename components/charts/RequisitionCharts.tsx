@@ -17,6 +17,8 @@ interface Dia {
   aprobadas: number; 
   rechazadas: number; 
   pendientes: number; 
+  en_gestion: number;
+  completadas: number;
   total: number; 
 }
 interface ChartDataResponse { porEstado: Estado[]; porProceso: Proceso[]; porDia: Dia[]; }
@@ -25,6 +27,7 @@ export default function RequisitionCharts() {
   const [chartData, setChartData] = useState<ChartDataResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(2025);
   
   const barChartRef = useRef<HTMLCanvasElement>(null);
   const lineChartRef = useRef<HTMLCanvasElement>(null);
@@ -37,42 +40,47 @@ export default function RequisitionCharts() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch("/api/requisiciones/estadisticas");
+        setLoading(true);
+        setError(null);
+        const response = await fetch(`/api/requisiciones/estadisticas?year=${selectedYear}`);
         if (!response.ok) throw new Error("Error en la API");
         const data = await response.json();
         setChartData(data.data);
       } catch (err) {
         setError("Error al cargar estadísticas");
+        setChartData(null);
       } finally {
         setLoading(false);
       }
     };
     fetchStats();
-  }, []);
+  }, [selectedYear]);
 
   useEffect(() => {
     if (!chartData) return;
 
     const { porEstado, porProceso, porDia } = chartData;
 
-    // Crear array de meses para 2025
-    const meses2025 = Array.from({ length: 12 }, (_, i) => {
+    // Crear array de meses para el año seleccionado
+    const mesesAnio = Array.from({ length: 12 }, (_, i) => {
       const mes = i + 1;
       return {
-        fecha: `2025-${String(mes).padStart(2, '0')}-01`,
-        mes_anio: new Date(2025, i, 1).toLocaleDateString('es-ES', { 
+        fecha: `${selectedYear}-${String(mes).padStart(2, '0')}-01`,
+        mes_anio: new Date(selectedYear, i, 1).toLocaleDateString('es-ES', { 
           month: 'long', 
           year: 'numeric' 
         }),
         aprobadas: 0,
         rechazadas: 0,
         pendientes: 0,
+        en_gestion: 0,
+        completadas: 0,
         total: 0
       };
     });
 
-    // Combinar con datos reales de 2025 - CORREGIDO para zona horaria
-    const datosCompletos = meses2025.map(mes => {
+    // Combinar con datos reales del año seleccionado - CORREGIDO para zona horaria
+    const datosCompletos = mesesAnio.map(mes => {
       const datosMes = porDia.find(d => {
         // Extraer mes directamente del string YYYY-MM-DD sin parsear Date
         const mesDato = parseInt(d.fecha.split('-')[1]);
@@ -87,7 +95,7 @@ export default function RequisitionCharts() {
       const [yearA, monthA] = a.fecha.split('-').map(Number);
       const [yearB, monthB] = b.fecha.split('-').map(Number);
       return yearA !== yearB ? yearA - yearB : monthA - monthB;
-    }).filter(item => item.fecha.startsWith('2025'));
+    }).filter(item => item.fecha.startsWith(String(selectedYear)));
 
     // Destruir gráficos anteriores
     if (barChartInstance.current) barChartInstance.current.destroy();
@@ -113,24 +121,40 @@ export default function RequisitionCharts() {
                 data: datosOrdenados.map(d => d.aprobadas), 
                 backgroundColor: "#4CAF50",
                 borderRadius: 4,
-                barThickness: 20,
-                maxBarThickness: 25
+                barThickness: 18,
+                maxBarThickness: 22
               },
               { 
                 label: "Pendientes", 
                 data: datosOrdenados.map(d => d.pendientes), 
                 backgroundColor: "#2196F3",
                 borderRadius: 4,
-                barThickness: 20,
-                maxBarThickness: 25
+                barThickness: 18,
+                maxBarThickness: 22
+              },
+              { 
+                label: "En gestión", 
+                data: datosOrdenados.map(d => d.en_gestion), 
+                backgroundColor: "#FF9800",
+                borderRadius: 4,
+                barThickness: 18,
+                maxBarThickness: 22
               },
               { 
                 label: "Rechazadas", 
                 data: datosOrdenados.map(d => d.rechazadas), 
                 backgroundColor: "#F44336",
                 borderRadius: 4,
-                barThickness: 20,
-                maxBarThickness: 25
+                barThickness: 18,
+                maxBarThickness: 22
+              },
+              { 
+                label: "Completadas", 
+                data: datosOrdenados.map(d => d.completadas), 
+                backgroundColor: "#9E9E9E",
+                borderRadius: 4,
+                barThickness: 18,
+                maxBarThickness: 22
               },
             ],
           },
@@ -183,7 +207,7 @@ export default function RequisitionCharts() {
                   },
                   title: function(tooltipItems: any[]) {
                     const dataIndex = tooltipItems[0].dataIndex;
-                    const [year, month] = datosOrdenados[dataIndex]?.fecha.split('-').map(Number) || [2025, 1];
+                    const [year, month] = datosOrdenados[dataIndex]?.fecha.split('-').map(Number) || [selectedYear, 1];
                     const mesesNombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
                     return `${mesesNombres[month - 1]} ${year}`.toUpperCase();
                   }
@@ -339,7 +363,11 @@ export default function RequisitionCharts() {
                 font: {
                   size: 14,
                   weight: 'bold'
-                }
+                },
+                padding: {
+                  top: 10,
+                  bottom: 20,
+                },
               }, 
               legend: { 
                 position: "right" 
@@ -365,6 +393,19 @@ export default function RequisitionCharts() {
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end mb-2">
+        <label className="flex items-center gap-2 text-sm font-medium text-white">
+          <span>Año:</span>
+          <select
+            className="border rounded px-2 py-1 text-sm bg-black text-white border-white"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+          >
+            <option value={2025}>2025</option>
+            <option value={2026}>2026</option>
+          </select>
+        </label>
+      </div>
       {/* Gráfica de barras */}
       <div className="bg-white p-6 rounded-lg shadow">
         <div style={{ height: '400px' }}>

@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { logger } from '@/utils/logger';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    console.log('Obteniendo estadísticas de dashboard...');
+    logger.debug('Obteniendo estadísticas de dashboard...');
     
     // Verificar si la tabla de usuarios existe
     const checkUsuariosQuery = `SHOW TABLES LIKE 'usuarios'`;
@@ -15,7 +16,7 @@ export async function GET() {
     ]);
     
     if (!usuariosTable || !requisicionTable) {
-      console.error('Tablas no encontradas:', {
+      logger.error('Tablas no encontradas', {
         usuarios: !!usuariosTable,
         requisicion: !!requisicionTable
       });
@@ -37,7 +38,7 @@ export async function GET() {
       const [tableResult] = await query(checkUserTableQuery);
       const userTableName = tableResult?.table_name || 'usuarios';
       
-      console.log(`Usando tabla de usuarios: ${userTableName}`);
+      logger.debug('Usando tabla de usuarios', { userTableName });
       
       // Obtener total de usuarios únicos de las tablas compras y coordinador
       let totalUsuarios = 0;
@@ -52,9 +53,9 @@ export async function GET() {
         
         const [userCount] = await query(countUsersQuery);
         totalUsuarios = userCount?.total || 0;
-        console.log('Total de usuarios únicos:', totalUsuarios);
+        logger.debug('Total de usuarios únicos', { totalUsuarios });
       } catch (error) {
-        console.error('Error al contar usuarios:', error);
+        logger.error('Error al contar usuarios', error);
         totalUsuarios = 0;
       }
       
@@ -76,31 +77,31 @@ export async function GET() {
         WHERE estado = 'aprobada'`;
 
       // Ejecutar consultas restantes en paralelo
-      console.log('Ejecutando consultas restantes...');
+      logger.debug('Ejecutando consultas restantes...');
       const [
         hoyResult,
         totalRequisicionesResult,
         completadasResult
       ] = await Promise.all([
         query(hoyQuery).catch(e => {
-          console.error('Error en consulta hoy:', e);
+          logger.error('Error en consulta hoy', e);
           return [];
         }),
         query(totalRequisicionesQuery).catch(e => {
-          console.error('Error en consulta totalRequisiciones:', e);
+          logger.error('Error en consulta totalRequisiciones', e);
           return [];
         }),
         query(completadasQuery).catch(e => {
-          console.error('Error en consulta completadas:', e);
+          logger.error('Error en consulta completadas', e);
           return [];
         })
       ]);
 
-      console.log('Resultados de consultas:', {
+      logger.debug('Resultados de consultas', {
         totalUsuarios,
         hoyResult,
         totalRequisicionesResult,
-        completadasResult
+        completadasResult,
       });
 
     // Procesar resultados
@@ -116,13 +117,18 @@ export async function GET() {
       completadasResult[0]?.total || 0 : 
       (completadasResult as any)?.total || 0;
     
+      const searchParams = req.nextUrl.searchParams;
+      const yearParam = searchParams.get('year');
+      const year = yearParam === '2025' || yearParam === '2026' ? Number(yearParam) : 2025;
+
       // Obtener estadísticas por estado
       const porEstadoQuery = `
         SELECT 
           estado,
           COUNT(*) as cantidad,
-          ROUND((COUNT(*) * 100.0) / (SELECT COUNT(*) FROM requisicion), 2) as porcentaje
+          ROUND((COUNT(*) * 100.0) / (SELECT COUNT(*) FROM requisicion WHERE YEAR(fecha_solicitud) = ${year}), 2) as porcentaje
         FROM requisicion
+        WHERE YEAR(fecha_solicitud) = ${year}
         GROUP BY estado
         ORDER BY cantidad DESC`;
 
@@ -131,8 +137,9 @@ export async function GET() {
         SELECT 
           proceso,
           COUNT(*) as cantidad,
-          ROUND((COUNT(*) * 100.0) / (SELECT COUNT(*) FROM requisicion), 2) as porcentaje
+          ROUND((COUNT(*) * 100.0) / (SELECT COUNT(*) FROM requisicion WHERE YEAR(fecha_solicitud) = ${year}), 2) as porcentaje
         FROM requisicion
+        WHERE YEAR(fecha_solicitud) = ${year}
         GROUP BY proceso
         ORDER BY cantidad DESC`;
 
@@ -151,43 +158,47 @@ export async function GET() {
             SUM(CASE WHEN estado = 'aprobada' THEN 1 ELSE 0 END) as aprobadas,
             SUM(CASE WHEN estado = 'rechazada' THEN 1 ELSE 0 END) as rechazadas,
             SUM(CASE WHEN estado = 'pendiente' OR estado = 'pendiente de aprobación' THEN 1 ELSE 0 END) as pendientes,
+            SUM(CASE WHEN estado = 'en_gestion' THEN 1 ELSE 0 END) as en_gestion,
+            SUM(CASE WHEN estado = 'completada' THEN 1 ELSE 0 END) as cerradas,
             COUNT(*) as total
           FROM requisicion
-          WHERE YEAR(fecha_solicitud) = 2025
+          WHERE YEAR(fecha_solicitud) = ${year}
           GROUP BY YEAR(fecha_solicitud), MONTH(fecha_solicitud)
         )
         SELECT 
-          CONCAT('2025-', LPAD(m.mes, 2, '0'), '-01') as fecha,
+          CONCAT('${year}-', LPAD(m.mes, 2, '0'), '-01') as fecha,
           DATE_FORMAT(
-            CONCAT('2025-', LPAD(m.mes, 2, '0'), '-01'),
+            CONCAT('${year}-', LPAD(m.mes, 2, '0'), '-01'),
             '%M %Y'
           ) as mes_anio,
           COALESCE(d.aprobadas, 0) as aprobadas,
           COALESCE(d.rechazadas, 0) as rechazadas,
           COALESCE(d.pendientes, 0) as pendientes,
+          COALESCE(d.en_gestion, 0) as en_gestion,
+          COALESCE(d.cerradas, 0) as completadas,
           COALESCE(d.total, 0) as total
         FROM meses_del_anio m
-        LEFT JOIN meses_con_datos d ON m.mes = d.mes_numero AND d.anio = 2025
+        LEFT JOIN meses_con_datos d ON m.mes = d.mes_numero AND d.anio = ${year}
         WHERE m.mes >= 1 AND m.mes <= 12
         ORDER BY m.mes ASC`;
 
       // Ejecutar consultas de gráficos
       const [porEstado, porProceso, porDia] = await Promise.all([
         query(porEstadoQuery).catch(e => {
-          console.error('Error en consulta porEstado:', e);
+          logger.error('Error en consulta porEstado', e);
           return [];
         }),
         query(porProcesoQuery).catch(e => {
-          console.error('Error en consulta porProceso:', e);
+          logger.error('Error en consulta porProceso', e);
           return [];
         }),
         query(porDiaQuery).catch(e => {
-          console.error('Error en consulta porDia:', e);
+          logger.error('Error en consulta porDia', e);
           return [];
         })
       ]);
 
-      console.log('Datos por día:', porDia);
+      logger.debug('Datos por día', porDia);
 
       // Formatear respuesta
       const responseData = {
@@ -198,11 +209,11 @@ export async function GET() {
         }
       };
 
-      console.log('Estadísticas del dashboard:', responseData);
+      logger.debug('Estadísticas del dashboard', responseData);
       return NextResponse.json(responseData);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      console.error('Error en consultas SQL:', error);
+      logger.error('Error en consultas SQL', error);
       return NextResponse.json(
         { 
           success: false, 
@@ -214,7 +225,7 @@ export async function GET() {
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-    console.error('Error general al obtener estadísticas:', error);
+    logger.error('Error general al obtener estadísticas', error);
     return NextResponse.json(
       { 
         success: false, 

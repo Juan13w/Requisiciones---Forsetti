@@ -19,7 +19,47 @@ export default function RequisitionDetails({ requisition, onClose }: Requisition
   };
 
   const getStatusClass = () => {
-    return "status-pending";
+    const status = (requisition.estado || "").toString().toLowerCase();
+    switch (status) {
+      case "aprobada":
+        return "status-aprobado";
+      case "rechazada":
+        return "status-rechazado";
+      case "completada":
+      case "cerrada":
+        return "status-completado";
+      case "correccion":
+        return "status-correccion";
+      case "en_gestion":
+      case "en gestion":
+      case "en gestión":
+        return "status-pendiente";
+      case "pendiente":
+      default:
+        return "status-pending";
+    }
+  };
+
+  const formatStatusText = () => {
+    const status = (requisition.estado || "").toString().toLowerCase();
+    switch (status) {
+      case "aprobada":
+        return "Aprobada";
+      case "rechazada":
+        return "Rechazada";
+      case "completada":
+      case "cerrada":
+        return "Completada";
+      case "correccion":
+        return "En corrección";
+      case "en_gestion":
+      case "en gestion":
+      case "en gestión":
+        return "En gestión";
+      case "pendiente":
+      default:
+        return "Pendiente";
+    }
   };
 
   return (
@@ -37,7 +77,7 @@ export default function RequisitionDetails({ requisition, onClose }: Requisition
         <div className="modal-body">
           <div className="req-header">
             <span className="req-consecutivo">{requisition.consecutivo}</span>
-            <span className={`status-badge ${getStatusClass()}`}>Pendiente</span>
+            <span className={`status-badge ${getStatusClass()}`}>{formatStatusText()}</span>
           </div>
 
           <div className="req-details-grid">
@@ -58,6 +98,46 @@ export default function RequisitionDetails({ requisition, onClose }: Requisition
               <p>{requisition.proceso}</p>
             </div>
           </div>
+
+          {(requisition.estado === 'rechazada' || requisition.estado === 'correccion') && (
+            <div className="status-alert">
+              <div className="alert-content">
+                <div className="alert-details">
+                  <h4>
+                    {requisition.estado === 'rechazada'
+                      ? 'Requisición rechazada'
+                      : 'Requisición en corrección'}
+                  </h4>
+
+                  {/* Motivo de corrección (comentario_rechazo) */}
+                  {requisition.comentarioRechazo && (
+                    <div className="alert-message">
+                      <p className="label">
+                        {requisition.estado === 'correccion'
+                          ? 'Motivo de corrección:'
+                          : 'Motivo de corrección (previo):'}
+                      </p>
+                      <p className="message">{requisition.comentarioRechazo}</p>
+                    </div>
+                  )}
+
+                  {/* Motivo de rechazo final (comentario_rechazo_f) solo cuando está rechazada */}
+                  {requisition.estado === 'rechazada' && requisition.comentarioRechazoFinal && (
+                    <div className="alert-message">
+                      <p className="label">Motivo de rechazo final:</p>
+                      <p className="message">{requisition.comentarioRechazoFinal}</p>
+                    </div>
+                  )}
+
+                  {requisition.fechaUltimoRechazo && (
+                    <p className="alert-timestamp">
+                      {new Date(requisition.fechaUltimoRechazo).toLocaleString('es-ES')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="detail-item-full">
             <label>Descripción del Producto:</label>

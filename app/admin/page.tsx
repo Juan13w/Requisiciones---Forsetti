@@ -23,7 +23,7 @@ export default function AdminDashboard() {
     const fetchStats = async () => {
       try {
         console.log('Solicitando estadísticas...');
-        const response = await fetch('/api/requisiciones/estadisticas', {
+        const response = await fetch('/api/admin/estadisticas', {
           cache: 'no-store' // Evitar caché para obtener datos actualizados
         });
         
@@ -34,13 +34,16 @@ export default function AdminDashboard() {
           throw new Error(data.error || 'Error al obtener estadísticas');
         }
         
-        console.log('Datos recibidos de la API:', data);
-        
+        console.log('Datos recibidos de la API (admin/estadisticas):', data);
+
+        // El endpoint /api/admin/estadisticas devuelve tanto campos
+        // genéricos (hoy, completadas, etc.) como los específicos
+        // que espera este dashboard (hoyRequisiciones, totalRequisiciones, etc.).
         setStats({
           totalUsers: data.totalUsuarios || 0,
-          todayRequisitions: data.hoyRequisiciones || 0,
-          totalRequisitions: data.totalRequisiciones || 0,
-          completedRequisitions: data.completadasRequisiciones || 0
+          todayRequisitions: data.hoyRequisiciones ?? data.hoy ?? 0,
+          totalRequisitions: data.totalRequisiciones ?? 0,
+          completedRequisitions: data.completadasRequisiciones ?? data.completadas ?? 0,
         });
       } catch (error) {
         console.error('Error fetching stats:', error);

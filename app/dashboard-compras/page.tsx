@@ -21,7 +21,7 @@ import {
 import RequisitionCharts from '@/components/charts/RequisitionCharts';
 // Los estilos se cargan a través de la configuración global en layout.tsx
 
-type Estado = 'pendiente' | 'aprobada' | 'rechazada' | 'correccion' | 'cerrada';
+type Estado = 'pendiente' | 'en_gestion' | 'aprobada' | 'rechazada' | 'correccion' | 'completada';
 
 interface RequisicionDB {
   id: string;
@@ -36,12 +36,22 @@ interface RequisicionDB {
   descripcion: string;
   cantidad: number;
   imagenes: string[];
+  archivos: Array<{
+    archivo_id: number;
+    nombre_archivo: string;
+    tipo_mime: string;
+    tamano: number;
+    fecha_creacion: Date;
+    url: string;
+  }>;
   estado: Estado;
   fechaCreacion: number;
   intentosRevision: number;
   comentarioRechazo: string;
+  comentarioRechazoFinal?: string;
   fechaUltimoRechazo: string;
   fechaUltimaModificacion: string;
+  usuarioActual?: string; // Campo para el usuario que aprueba/rechaza
   coordinador_email?: string;
 }
 
@@ -75,6 +85,12 @@ export default function DashboardCompras() {
   const [empresas, setEmpresas] = useState<string[]>([]);
   const [empresasLoading, setEmpresasLoading] = useState(false);
   const [empresasError, setEmpresasError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const formatEstadoLabel = (estado: string) => {
+    if (estado === 'en_gestion') return 'En gestión';
+    return estado.charAt(0).toUpperCase() + estado.slice(1);
+  };
 
   // Historial modal state
   type HistEntry = {
@@ -92,6 +108,56 @@ export default function DashboardCompras() {
 
   // Modal de detalle
   const [showDetailModal, setShowDetailModal] = useState<{ open: boolean; req: RequisicionDB | null }>({ open: false, req: null });
+
+  // Modal de filtros para reporte PDF
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportFilterMes, setReportFilterMes] = useState('');
+  const [reportFilterEmpresa, setReportFilterEmpresa] = useState('');
+  const [reportFilterProceso, setReportFilterProceso] = useState('');
+  const [reportFilterEstado, setReportFilterEstado] = useState('');
+  const [pdfReportError, setPdfReportError] = useState<string | null>(null);
+
+  // Detectar soporte para input type="month" (para compatibilidad con Edge)
+  const [supportsMonthInput, setSupportsMonthInput] = useState(true);
+
+  useEffect(() => {
+    // Comprobar si el navegador soporta input type="month"
+    const input = document.createElement('input');
+    input.type = 'month';
+    setSupportsMonthInput(input.type === 'month');
+  }, []);
+
+  // Asegurar que reportFilterMes tenga un valor válido en Edge
+  useEffect(() => {
+    if (showReportModal && !reportFilterMes && supportsMonthInput) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      setReportFilterMes(`${year}-${month}`);
+    }
+  }, [showReportModal, reportFilterMes, supportsMonthInput]);
+
+  // Helpers para el fallback de mes/año
+  const getYearFromMonthString = (monthStr: string) => monthStr.split('-')[0] || '';
+  const getMonthFromMonthString = (monthStr: string) => monthStr.split('-')[1] || '';
+  const buildMonthString = (year: string, month: string) => `${year}-${month}`;
+
+  const [fallbackYear, setFallbackYear] = useState(() => getYearFromMonthString(reportFilterMes) || new Date().getFullYear().toString());
+  const [fallbackMonth, setFallbackMonth] = useState(() => getMonthFromMonthString(reportFilterMes) || String(new Date().getMonth() + 1).padStart(2, '0'));
+
+  useEffect(() => {
+    setFallbackYear(getYearFromMonthString(reportFilterMes) || new Date().getFullYear().toString());
+    setFallbackMonth(getMonthFromMonthString(reportFilterMes) || String(new Date().getMonth() + 1).padStart(2, '0'));
+  }, [reportFilterMes]);
+
+  const handleFallbackChange = () => {
+    const newMonthStr = buildMonthString(fallbackYear, fallbackMonth);
+    setReportFilterMes(newMonthStr);
+  };
+
+  useEffect(() => {
+    handleFallbackChange();
+  }, [fallbackYear, fallbackMonth]);
 
   // Abrir detalle en modal
   const openDetail = (id: string) => {
@@ -113,10 +179,13 @@ export default function DashboardCompras() {
     descripcion: req.descripcion || '',
     cantidad: req.cantidad || 0,
     imagenes: req.imagenes || (req.img ? [req.img] : []),
+    // Incluir el campo archivos que viene de la API
+    archivos: req.archivos || [],
     estado: (req.estado as Estado) || 'pendiente',
     fechaCreacion: req.fechaCreacion || Date.now(),
     intentosRevision: req.intentosRevision || 0,
     comentarioRechazo: req.comentarioRechazo || '',
+    comentarioRechazoFinal: req.comentarioRechazoFinal || '',
     fechaUltimoRechazo: req.fechaUltimoRechazo || '',
     fechaUltimaModificacion: req.fechaUltimaModificacion || new Date().toISOString(),
     coordinador_email: req.coordinador_email || undefined,
@@ -134,11 +203,13 @@ export default function DashboardCompras() {
         }
 
         const data: unknown = await response.json();
+        
         if (!Array.isArray(data)) {
           throw new Error('Formato de respuesta inválido');
         }
 
-        setRequisiciones(data.map((req) => formatRequisicion(req)));
+        const formattedData = data.map((req) => formatRequisicion(req));
+        setRequisiciones(formattedData);
       } catch (err) {
         console.error('Error al cargar las requisiciones:', err);
         setReportError(err instanceof Error ? err.message : 'Error desconocido al cargar las requisiciones');
@@ -159,18 +230,28 @@ export default function DashboardCompras() {
         const res = await fetch('/api/empresas');
         if (!res.ok) throw new Error('Error al cargar empresas');
         const data: { nombre: string }[] = await res.json();
-        const nombres = Array.from(new Set((data || []).map((e) => e.nombre).filter(Boolean)));
+        const nombresBase = Array.from(new Set((data || []).map((e) => e.nombre).filter(Boolean)));
+
+        // Empresas que siempre deben estar disponibles en los filtros
+        const empresasFijas = ['SERVISALUD', 'ACCESALUD', 'INPROSALUDPLUS'];
+
+        // Combinar resultados de la API con las empresas fijas y evitar duplicados
+        const nombresConFijas = Array.from(new Set([...nombresBase, ...empresasFijas]));
+
         // Respaldo: si API trae vacío, tomar de requisiciones
-        if (nombres.length === 0 && requisiciones.length > 0) {
-          const fallback = Array.from(new Set(requisiciones.map((r) => r.empresa).filter(Boolean))).sort();
-          setEmpresas(fallback);
+        if (nombresConFijas.length === 0 && requisiciones.length > 0) {
+          const fallbackBase = Array.from(new Set(requisiciones.map((r) => r.empresa).filter(Boolean)));
+          const fallbackConFijas = Array.from(new Set([...fallbackBase, ...empresasFijas]));
+          setEmpresas(fallbackConFijas.sort());
         } else {
-          setEmpresas(nombres.sort());
+          setEmpresas(nombresConFijas.sort());
         }
       } catch (e) {
         // Respaldo a partir de requisiciones cargadas
-        const fallback = Array.from(new Set(requisiciones.map((r) => r.empresa).filter(Boolean))).sort();
-        setEmpresas(fallback);
+        const fallbackBase = Array.from(new Set(requisiciones.map((r) => r.empresa).filter(Boolean)));
+        const empresasFijas = ['SERVISALUD', 'ACCESALUD', 'INPROSALUDPLUS'];
+        const fallbackConFijas = Array.from(new Set([...fallbackBase, ...empresasFijas]));
+        setEmpresas(fallbackConFijas.sort());
         setEmpresasError(e instanceof Error ? e.message : 'Error desconocido al cargar empresas');
       } finally {
         setEmpresasLoading(false);
@@ -199,6 +280,31 @@ export default function DashboardCompras() {
     }
   };
 
+  // Función para obtener el email del usuario actual
+const getCurrentUserEmail = () => {
+  if (typeof window === 'undefined') return 'Sistema';
+  
+  try {
+    const usuarioData = localStorage.getItem('usuarioData');
+    console.log('DEBUG: usuarioData de localStorage:', usuarioData);
+    
+    if (usuarioData) {
+      const user = JSON.parse(usuarioData);
+      console.log('DEBUG: usuario parseado:', user);
+      
+      // Intentar obtener email o nombre, fallback a otros campos
+      const email = user.email || user.correo || user.nombre || user.username || 'Usuario desconocido';
+      console.log('DEBUG: email final:', email);
+      return email;
+    } else {
+      console.log('DEBUG: No hay usuarioData en localStorage');
+    }
+  } catch (error) {
+    console.error('Error al obtener usuario actual:', error);
+  }
+  return 'Sistema';
+};
+
   // Actualizar estado
   const updateRequisitionStatus = async (
     id: string,
@@ -224,7 +330,7 @@ export default function DashboardCompras() {
         return;
       }
       comentarioRechazo = comentario;
-    } else if (newStatus === 'cerrada') {
+    } else if (newStatus === 'completada') {
       const req = requisiciones.find(r => r.id === id || r.requisicion_id.toString() === id);
       if (!req) return;
       if (!(req.estado === 'aprobada' || req.estado === 'rechazada')) {
@@ -234,14 +340,23 @@ export default function DashboardCompras() {
       if (!confirm('¿Está seguro que desea cerrar esta requisición?')) {
         return;
       }
-    } else if (!confirm(`¿Está seguro que desea ${newStatus} esta requisición?`)) {
-      return;
+    } else {
+      let mensajeConfirmacion = `¿Está seguro que desea ${newStatus} esta requisición?`;
+      if (newStatus === 'en_gestion') {
+        mensajeConfirmacion = '¿Está seguro que desea poner esta requisición en gestión?';
+      }
+      if (!confirm(mensajeConfirmacion)) {
+        return;
+      }
     }
 
     setIsUpdating(id);
 
     try {
-      const body: Partial<RequisicionDB> = { estado: newStatus };
+      const body: Partial<RequisicionDB> = { 
+        estado: newStatus,
+        usuarioActual: getCurrentUserEmail() // Agregar usuario actual
+      };
 
       if (newStatus === 'rechazada' || newStatus === 'correccion') {
         body.comentarioRechazo = comentarioRechazo;
@@ -298,6 +413,10 @@ export default function DashboardCompras() {
                 newStatus === 'rechazada' || newStatus === 'correccion'
                   ? (updatedRequisition?.comentarioRechazo || comentarioRechazo)
                   : req.comentarioRechazo,
+              comentarioRechazoFinal:
+                newStatus === 'rechazada'
+                  ? (updatedRequisition?.comentarioRechazoFinal || comentarioRechazo)
+                  : (updatedRequisition?.comentarioRechazoFinal ?? req.comentarioRechazoFinal),
               fechaUltimoRechazo:
                 newStatus === 'rechazada' || newStatus === 'correccion'
                   ? (updatedRequisition?.fechaUltimoRechazo || new Date().toISOString())
@@ -335,35 +454,56 @@ export default function DashboardCompras() {
     }
   };
 
-  // Generar reporte
-  const handleGenerateReport = async () => {
+  // Generar reporte con filtros
+  const handleGenerateReport = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
     try {
       setIsSendingReport(true);
-      setReportError(null);
+      setPdfReportError(null);
       setReportSuccess(null);
 
-      const response = await fetch('/api/reportes/requisiciones');
+      // Construir URL con parámetros de filtro
+      const params = new URLSearchParams();
+      if (reportFilterMes) params.append('mes', reportFilterMes);
+      if (reportFilterEmpresa) params.append('empresa', reportFilterEmpresa);
+      if (reportFilterProceso) params.append('proceso', reportFilterProceso);
+      if (reportFilterEstado) params.append('estado', reportFilterEstado);
+      
+      const queryString = params.toString();
+      const url = `/api/reportes/requisiciones${queryString ? `?${queryString}` : ''}`;
+
+      const response = await fetch(url);
       const data: ApiResponse<null> = await response.json();
 
-      if (!response.ok || !data.success || !data.fileUrl) {
-        throw new Error(data.error || data.message || 'Error al generar el reporte');
+      // Verificar si hay error (aunque sea status 200)
+      if (!data.success) {
+        setPdfReportError(data.error || 'No se encontraron requisiciones con los filtros seleccionados');
+        return;
       }
 
-      const link = document.createElement('a');
-      link.href = data.fileUrl;
-      // Usamos un nombre de archivo por defecto ya que data.filename no está definido en el tipo
-      link.download = 'reporte-requisiciones.pdf';
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (!data.fileUrl) {
+        setPdfReportError('Error al generar el reporte: no se recibió el archivo');
+        return;
+      }
+
+      // Abrir el PDF en una nueva pestaña
+      window.open(data.fileUrl, '_blank');
 
       setReportSuccess('Reporte PDF generado correctamente');
+      setShowReportModal(false);
+      // Limpiar filtros después de generar
+      setReportFilterMes('');
+      setReportFilterEmpresa('');
+      setReportFilterProceso('');
+      setReportFilterEstado('');
       setTimeout(() => setReportSuccess(null), 5000);
     } catch (err) {
-      setReportError(err instanceof Error ? err.message : 'Error desconocido');
-      setTimeout(() => setReportError(null), 10000);
+      console.error('Error al generar reporte:', err);
+      setPdfReportError(err instanceof Error ? err.message : 'Error desconocido al generar el reporte');
     } finally {
       setIsSendingReport(false);
     }
@@ -438,10 +578,10 @@ export default function DashboardCompras() {
   // Renderizar estado con íconos
   const renderStatus = (status: Estado, requisicion: RequisicionDB) => {
     switch (status) {
-      case 'cerrada':
+      case 'completada':
         return (
           <span className="status-badge">
-            <FileText className="icon" /> Cerrada
+            <FileText className="icon" /> Completada
           </span>
         );
       case 'aprobada':
@@ -458,25 +598,35 @@ export default function DashboardCompras() {
             </span>
             {requisicion.comentarioRechazo && (
               <div className="mt-1 text-xs text-gray-600">
-                <strong>Motivo:</strong> {requisicion.comentarioRechazo}
+                <strong>Motivo de corrección:</strong> {requisicion.comentarioRechazo}
+              </div>
+            )}
+            {requisicion.comentarioRechazoFinal && (
+              <div className="mt-1 text-xs text-gray-800">
+                <strong>Motivo de rechazo final:</strong> {requisicion.comentarioRechazoFinal}
               </div>
             )}
           </div>
         );
-      // En la función renderStatus, modifica el caso 'correccion':
-case 'correccion':
-  return (
-    <div>
-      <span className="status-badge warning">
-        <AlertCircle className="icon" /> En corrección
-      </span>
-      {requisicion.comentarioRechazo && (
-        <div className="mt-1 text-xs text-yellow-700">
-          {requisicion.comentarioRechazo}
-        </div>
-      )}
-    </div>
-  );
+      case 'correccion':
+        return (
+          <div>
+            <span className="status-badge warning">
+              <AlertCircle className="icon" /> En corrección
+            </span>
+            {requisicion.comentarioRechazo && (
+              <div className="mt-1 text-xs text-yellow-700">
+                {requisicion.comentarioRechazo}
+              </div>
+            )}
+          </div>
+        );
+      case 'en_gestion':
+        return (
+          <span className="status-badge warning">
+            <Clock className="icon" /> En gestión
+          </span>
+        );
       case 'pendiente':
       default:
         return (
@@ -487,13 +637,39 @@ case 'correccion':
     }
   };
 
-  // Loading
+  // Loading mejorado
   if (loading) {
     return (
-      <div className="dashboard-page">
-        <div className="loading-container">
-          <div className="loading-spinner"></div>
-          <p>Cargando requisiciones...</p>
+      <div className="dashboard-loading-container">
+        {/* Partículas de fondo animadas */}
+        <div className="dashboard-loading-particles">
+          <div className="dashboard-loading-particle"></div>
+          <div className="dashboard-loading-particle"></div>
+          <div className="dashboard-loading-particle"></div>
+          <div className="dashboard-loading-particle"></div>
+          <div className="dashboard-loading-particle"></div>
+        </div>
+        
+        {/* Contenido principal de carga */}
+        <div className="dashboard-loading-content">
+          {/* Logo o spinner principal */}
+          <div className="dashboard-loading-spinner"></div>
+          
+          {/* Título y subtítulo */}
+          <h2 className="dashboard-loading-title">Panel de Compras</h2>
+          <p className="dashboard-loading-subtitle">Cargando requisiciones...</p>
+          
+          {/* Barra de progreso animada */}
+          <div className="dashboard-loading-progress">
+            <div className="dashboard-loading-progress-bar"></div>
+          </div>
+          
+          {/* Puntos animados */}
+          <div className="dashboard-loading-dots">
+            <div className="dashboard-loading-dot"></div>
+            <div className="dashboard-loading-dot"></div>
+            <div className="dashboard-loading-dot"></div>
+          </div>
         </div>
       </div>
     );
@@ -518,9 +694,11 @@ case 'correccion':
   // Stats
   const totalRequisiciones = requisiciones.length;
   const pendientes = requisiciones.filter((r) => r.estado === 'pendiente').length;
+  const enGestion = requisiciones.filter((r) => r.estado === 'en_gestion').length;
   const aprobadas = requisiciones.filter((r) => r.estado === 'aprobada').length;
   const rechazadas = requisiciones.filter((r) => r.estado === 'rechazada').length;
   const enCorreccion = requisiciones.filter((r) => r.estado === 'correccion').length;
+  const cerradas = requisiciones.filter((r) => r.estado === 'completada').length;
 
   // Filtros combinados
   const filteredRequisiciones = requisiciones.filter((req) => {
@@ -545,6 +723,13 @@ case 'correccion':
     
     return true;
   });
+  const pageSize = 50;
+  const totalFiltered = filteredRequisiciones.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedRequisiciones = filteredRequisiciones.slice(startIndex, endIndex);
   const countByEmpresa = requisiciones.reduce<Record<string, number>>((acc, r) => {
     if (r.empresa) acc[r.empresa] = (acc[r.empresa] || 0) + 1;
     return acc;
@@ -563,7 +748,7 @@ case 'correccion':
         <div className="header-actions">
           <button
             className="action-btn generate-report-btn"
-            onClick={handleGenerateReport}
+            onClick={() => setShowReportModal(true)}
             disabled={isSendingReport}
           >
             <FileText className="btn-icon" />
@@ -622,6 +807,19 @@ case 'correccion':
           <div className="stat-value red">{rechazadas}</div>
           <p className="stat-description">{`Total histórico: ${rechazadas}`}</p>
         </div>
+
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <span className="stat-card-title">COMPLETADAS</span>
+            <CheckCircle className="stat-icon" />
+          </div>
+          <div className="stat-value gray">{cerradas}</div>
+          <p className="stat-description">
+            {totalRequisiciones > 0
+              ? `${Math.round((cerradas / totalRequisiciones) * 100)}% del total`
+              : 'Sin datos'}
+          </p>
+        </div>
       </div>
 
       {/* CHARTS */}
@@ -674,16 +872,18 @@ case 'correccion':
       </div>
 
       {/* LISTA DE REQUISICIONES */}
-      <div className="recent-requisitions">
+      <div className="recent-requisitions mt-8">
         <div className="section-header">
-          <h2>{selectedEmpresa ? `Requisiciones - ${selectedEmpresa}` : 'Requisiciones Recientes'}</h2>
-          <p className="section-description">
+          <h2 className="text-white">
+            {selectedEmpresa ? `Requisiciones - ${selectedEmpresa}` : 'Requisiciones Recientes'}
+          </h2>
+          <p className="section-description text-gray-300">
             {selectedEmpresa ? 'Filtradas por empresa seleccionada' : 'Últimas solicitudes enviadas por los coordinadores'}
           </p>
         </div>
 
         {/* Filtros de búsqueda */}
-        <div className="filters-container mb-6 p-4 bg-black rounded-lg shadow-sm border border-gray-200">
+        <div className="filters-container mb-6 p-4 bg-black rounded-lg shadow-sm border border-gray-700">
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             {/* Filtro de búsqueda */}
             <div className="relative flex-1">
@@ -693,7 +893,7 @@ case 'correccion':
               <input
                 type="text"
                 placeholder="Buscar por empresa, solicitante, proceso..."
-                className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 border"
+                className="pl-10 block w-full rounded-md border border-gray-600 bg-gray-900 text-white placeholder-gray-400 shadow-sm focus:border-indigo-400 focus:ring-indigo-400 text-base sm:text-base py-2.5"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -708,10 +908,11 @@ case 'correccion':
               >
                 <option className="text-gray-800" value="todos">Todos los estados</option>
                 <option className="text-gray-800" value="pendiente">Pendiente</option>
+                <option className="text-gray-800" value="en_gestion">En gestión</option>
                 <option className="text-gray-800" value="aprobada">Aprobada</option>
                 <option className="text-gray-800" value="rechazada">Rechazada</option>
                 <option className="text-gray-800" value="correccion">En corrección</option>
-                <option className="text-gray-800" value="cerrada">Cerrada</option>
+                <option className="text-gray-800" value="completada">Completada</option>
               </select>
             </div>
             
@@ -730,94 +931,129 @@ case 'correccion':
           </div>
         </div>
         
-        <div className="requisition-grid">
-          {filteredRequisiciones.map((req) => (
-            <div key={req.id} className="requisition-card">
-              <div className="requisition-card-header">
-                <div className="requisition-card-title">
-                  <div className="requisition-id">{req.consecutivo || req.id}</div>
-                  <h3 className="requisition-solicitante">{req.nombreSolicitante}</h3>
-                  <div className="requisition-date">
+        {/* Tabla de requisiciones en formato listado */}
+        <div className="requisition-table-container">
+          <table className="requisition-table">
+            <thead>
+              <tr>
+                <th>Consecutivo</th>
+                <th>Solicitante</th>
+                <th>Empresa</th>
+                <th>Proceso</th>
+                <th>Fecha</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedRequisiciones.map((req) => (
+                <tr key={req.id} className="requisition-row">
+                  <td className="cell-consecutivo">
+                    <span className="consecutivo-badge">{req.consecutivo || req.id}</span>
+                  </td>
+                  <td className="cell-solicitante">
+                    <div className="solicitante-info">
+                      <span className="solicitante-nombre">{req.nombreSolicitante}</span>
+                      {req.coordinador_email && (
+                        <span className="solicitante-email">{req.coordinador_email}</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="cell-empresa">{req.empresa}</td>
+                  <td className="cell-proceso">{req.proceso}</td>
+                  <td className="cell-fecha">
                     {new Date(req.fechaCreacion).toLocaleDateString('es-ES', {
                       day: '2-digit',
                       month: 'short',
                       year: 'numeric'
                     })}
-                  </div>
-                </div>
-                <div className={`status-badge ${req.estado}`}>
-                  {req.estado.charAt(0).toUpperCase() + req.estado.slice(1)}
-                </div>
-              </div>
-              
-              <div className="requisition-card-footer">
-                <div className="requisition-actions">
-                  <button
-                    className="action-btn view-btn"
-                    onClick={() => {
-                      setShowDetailModal({ open: true, req });
-                    }}
-                    title="Ver detalles"
-                  >
-                    <Eye className="action-icon" size={16} />
-                    <span className="action-text"></span>
-                  </button>
-                  
-                  {(req.estado === 'aprobada' || req.estado === 'rechazada') && (
-                    <button
-                      onClick={(e) => updateRequisitionStatus(req.id, 'cerrada', e)}
-                      className="action-btn close-btn"
-                      disabled={!!isUpdating && isUpdating === req.id}
-                      title="Cerrar requisición"
-                    >
-                      <X className="action-icon" size={16} />
-                      <span className="action-text"></span>
-                    </button>
-                  )}
-                  
-                  <button
-                    onClick={(e) => updateRequisitionStatus(req.id, 'aprobada', e)}
-                    className="action-btn approve-btn"
-                    disabled={!!isUpdating && isUpdating === req.id}
-                    title="Aprobar"
-                  >
-                    <CheckCircle className="action-icon" size={16} />
-                    <span className="action-text"></span>
-                  </button>
-                  
-                  <button
-                    onClick={(e) => updateRequisitionStatus(req.id, 'rechazada', e)}
-                    className="action-btn reject-btn"
-                    disabled={!!isUpdating && isUpdating === req.id}
-                    title="Rechazar"
-                  >
-                    <X className="action-icon" size={16} />
-                    <span className="action-text"></span>
-                  </button>
-                  
-                  <button
-                    onClick={(e) => updateRequisitionStatus(req.id, 'correccion', e)}
-                    className="action-btn warning-btn"
-                    disabled={!!isUpdating && isUpdating === req.id}
-                    title="Solicitar corrección"
-                  >
-                    <AlertCircle className="action-icon" size={16} />
-                    <span className="action-text"></span>
-                  </button>
-                  
-                  <button
-                    onClick={() => openHistory(req.id)}
-                    className="action-btn history-btn"
-                    title="Ver historial"
-                    type="button"
-                  >
-                    <History className="action-icon" size={16} />
-                    <span className="action-text"></span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
+                  </td>
+                  <td className="cell-estado">
+                    <span className={`status-badge ${req.estado}`}>
+                      {formatEstadoLabel(req.estado)}
+                    </span>
+                  </td>
+                  <td className="cell-acciones">
+                    <div className="table-actions">
+                      <button
+                        className="action-btn view-btn"
+                        onClick={() => setShowDetailModal({ open: true, req })}
+                        title="Ver detalles"
+                      >
+                        <Eye className="action-icon" size={16} />
+                      </button>
+                      
+                      {/* Botón Completar - solo cuando está aprobada */}
+                      {req.estado === 'aprobada' && (
+                        <button
+                          onClick={(e) => updateRequisitionStatus(req.id, 'completada', e)}
+                          className="action-btn close-btn"
+                          disabled={!!isUpdating && isUpdating === req.id}
+                          title="Completar requisición"
+                        >
+                          <X className="action-icon" size={16} />
+                        </button>
+                      )}
+                      
+                      {/* Botones de acción - solo cuando NO está aprobada, rechazada o completada */}
+                      {req.estado !== 'aprobada' && req.estado !== 'rechazada' && req.estado !== 'completada' && (
+                        <>
+                          {/* Pasar a En gestión (solo desde pendiente) */}
+                          {req.estado === 'pendiente' && (
+                            <button
+                              onClick={(e) => updateRequisitionStatus(req.id, 'en_gestion', e)}
+                              className="action-btn warning-btn"
+                              disabled={!!isUpdating && isUpdating === req.id}
+                              title="Poner en gestión"
+                            >
+                              <Clock className="action-icon" size={16} />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={(e) => updateRequisitionStatus(req.id, 'aprobada', e)}
+                            className="action-btn approve-btn"
+                            disabled={!!isUpdating && isUpdating === req.id}
+                            title="Aprobar"
+                          >
+                            <CheckCircle className="action-icon" size={16} />
+                          </button>
+                          
+                          <button
+                            onClick={(e) => updateRequisitionStatus(req.id, 'rechazada', e)}
+                            className="action-btn reject-btn"
+                            disabled={!!isUpdating && isUpdating === req.id}
+                            title="Rechazar"
+                          >
+                            <X className="action-icon" size={16} />
+                          </button>
+                          
+                          <button
+                            onClick={(e) => updateRequisitionStatus(req.id, 'correccion', e)}
+                            className="action-btn warning-btn"
+                            disabled={!!isUpdating && isUpdating === req.id}
+                            title="Solicitar corrección"
+                          >
+                            <AlertCircle className="action-icon" size={16} />
+                          </button>
+                        </>
+                      )}
+                      
+                      <button
+                        onClick={() => openHistory(req.id)}
+                        className="action-btn history-btn"
+                        title="Ver historial"
+                        type="button"
+                      >
+                        <History className="action-icon" size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          
           {filteredRequisiciones.length === 0 && (
             <div className="no-requisitions">
               {selectedEmpresa ? 'No hay requisiciones para esta empresa' : 'No hay requisiciones registradas'}
@@ -826,7 +1062,253 @@ case 'correccion':
         </div>
       </div>
 
-      {/* MODAL PARA ENVIAR REPORTE - NUEVO DISEÑO */}
+      {/* MODAL PARA GENERAR REPORTE CON FILTROS */}
+      {showReportModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem',
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: '#111111',
+            borderRadius: '0.75rem',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
+            width: '100%',
+            maxWidth: '32rem',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            border: '1px solid #BFA181'
+          }}>
+            {/* Encabezado */}
+            <div style={{ backgroundColor: '#1a1a1a', borderBottom: '2px solid #BFA181' }} className="text-white p-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold" style={{ color: '#BFA181' }}>Generar Reporte PDF</h2>
+                <button
+                  onClick={() => {
+                    setShowReportModal(false);
+                    setReportFilterMes('');
+                    setReportFilterEmpresa('');
+                    setReportFilterProceso('');
+                    setReportFilterEstado('');
+                    setPdfReportError(null);
+                  }}
+                  className="text-white/80 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-white/50 rounded-full p-1"
+                  disabled={isSendingReport}
+                  aria-label="Cerrar modal"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              <p className="mt-1 text-gray-400 text-sm">
+                Seleccione los filtros para generar el reporte. Deje vacío para incluir todas las requisiciones.
+              </p>
+            </div>
+
+            {/* Cuerpo del formulario */}
+            <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto" style={{ backgroundColor: '#111111' }}>
+              {/* Filtro por Mes */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Mes
+                </label>
+                {supportsMonthInput ? (
+                  <input
+                    type="month"
+                    value={reportFilterMes}
+                    onChange={(e) => setReportFilterMes(e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg transition-colors text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent month-input-enhanced"
+                    style={{ 
+                      backgroundColor: '#1a1a1a', 
+                      border: '1px solid #3a3a3a', 
+                      colorScheme: 'dark'
+                    }}
+                    disabled={isSendingReport}
+                  />
+                ) : (
+                  // Fallback para navegadores que no soportan type="month" (Edge antiguo)
+                  <div className="flex space-x-2">
+                    <select
+                      value={fallbackYear}
+                      onChange={(e) => setFallbackYear(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg transition-colors text-white"
+                      style={{ backgroundColor: '#1a1a1a', border: '1px solid #3a3a3a' }}
+                      disabled={isSendingReport}
+                    >
+                      {Array.from({ length: 5 }, (_, i) => {
+                        const year = new Date().getFullYear() - 2 + i;
+                        return (
+                          <option key={year} value={year}>{year}</option>
+                        );
+                      })}
+                    </select>
+                    <select
+                      value={fallbackMonth}
+                      onChange={(e) => setFallbackMonth(e.target.value)}
+                      className="flex-1 px-3 py-2 rounded-lg transition-colors text-white"
+                      style={{ backgroundColor: '#1a1a1a', border: '1px solid #3a3a3a' }}
+                      disabled={isSendingReport}
+                    >
+                      <option value="01">Enero</option>
+                      <option value="02">Febrero</option>
+                      <option value="03">Marzo</option>
+                      <option value="04">Abril</option>
+                      <option value="05">Mayo</option>
+                      <option value="06">Junio</option>
+                      <option value="07">Julio</option>
+                      <option value="08">Agosto</option>
+                      <option value="09">Septiembre</option>
+                      <option value="10">Octubre</option>
+                      <option value="11">Noviembre</option>
+                      <option value="12">Diciembre</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Filtro por Empresa */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Empresa
+                </label>
+                <select
+                  value={reportFilterEmpresa}
+                  onChange={(e) => setReportFilterEmpresa(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg transition-colors text-white"
+                  style={{ backgroundColor: '#1a1a1a', border: '1px solid #3a3a3a' }}
+                  disabled={isSendingReport}
+                >
+                  <option value="">Todas las empresas</option>
+                  {empresas.map((emp) => (
+                    <option key={emp} value={emp}>{emp}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro por Proceso */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Proceso
+                </label>
+                <select
+                  value={reportFilterProceso}
+                  onChange={(e) => setReportFilterProceso(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg transition-colors text-white"
+                  style={{ backgroundColor: '#1a1a1a', border: '1px solid #3a3a3a' }}
+                  disabled={isSendingReport}
+                >
+                  <option value="">Todos los procesos</option>
+                  {Array.from(new Set(requisiciones.map(r => r.proceso).filter(Boolean))).sort().map((proc) => (
+                    <option key={proc} value={proc}>{proc}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filtro por Estado */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Estado
+                </label>
+                <select
+                  value={reportFilterEstado}
+                  onChange={(e) => setReportFilterEstado(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg transition-colors text-white"
+                  style={{ backgroundColor: '#1a1a1a', border: '1px solid #3a3a3a' }}
+                  disabled={isSendingReport}
+                >
+                  <option value="">Todos los estados</option>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="en_gestion">En gestión</option>
+                  <option value="aprobada">Aprobada</option>
+                  <option value="rechazada">Rechazada</option>
+                  <option value="correccion">En corrección</option>
+                  <option value="completada">Completada</option>
+                </select>
+              </div>
+
+              {/* Resumen de filtros */}
+              {(reportFilterMes || reportFilterEmpresa || reportFilterProceso || reportFilterEstado) && (
+                <div className="p-3 rounded-lg text-sm" style={{ backgroundColor: '#1a1a1a', border: '1px solid #BFA181' }}>
+                  <p className="font-medium mb-1" style={{ color: '#BFA181' }}>Filtros seleccionados:</p>
+                  <ul className="list-disc list-inside space-y-1 text-gray-300">
+                    {reportFilterMes && <li>Mes: {reportFilterMes}</li>}
+                    {reportFilterEmpresa && <li>Empresa: {reportFilterEmpresa}</li>}
+                    {reportFilterProceso && <li>Proceso: {reportFilterProceso}</li>}
+                    {reportFilterEstado && <li>Estado: {formatEstadoLabel(reportFilterEstado)}</li>}
+                  </ul>
+                </div>
+              )}
+
+              {/* Mensajes de estado */}
+              {pdfReportError && (
+                <div className="p-4 bg-red-100 border-2 border-red-400 text-red-800 rounded-lg flex items-start space-x-3 shadow-md">
+                  <AlertCircle className="flex-shrink-0 w-6 h-6 mt-0.5 text-red-600" />
+                  <div>
+                    <p className="font-semibold">No se pudo generar el reporte</p>
+                    <p className="text-sm mt-1">{pdfReportError}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Pie del modal - Acciones */}
+            <div className="px-6 py-4 flex justify-end space-x-3" style={{ backgroundColor: '#1a1a1a', borderTop: '1px solid #3a3a3a' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReportModal(false);
+                  setReportFilterMes('');
+                  setReportFilterEmpresa('');
+                  setReportFilterProceso('');
+                  setReportFilterEstado('');
+                  setPdfReportError(null);
+                }}
+                disabled={isSendingReport}
+                className="px-4 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 transition-colors"
+                style={{ backgroundColor: '#2a2a2a', border: '1px solid #3a3a3a' }}
+              >
+                Cancelar
+              </button>
+              
+              <button
+                type="button"
+                onClick={(e) => handleGenerateReport(e)}
+                disabled={isSendingReport}
+                className={`px-4 py-2 text-sm font-medium text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
+                  isSendingReport
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'hover:opacity-90'
+                }`}
+                style={{ backgroundColor: '#BFA181' }}
+              >
+                {isSendingReport ? (
+                  <span className="flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generando...
+                  </span>
+                ) : (
+                  <span className="flex items-center">
+                    <Download className="w-4 h-4 mr-2" />
+                    Generar PDF
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA ENVIAR REPORTE - DISEÑO OSCURO */}
       {showSendModal && (
         <div style={{
           position: 'fixed',
@@ -843,20 +1325,21 @@ case 'correccion':
           backdropFilter: 'blur(4px)'
         }}>
           <div style={{
-            backgroundColor: 'white',
+            backgroundColor: '#111111',
             borderRadius: '0.75rem',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2)',
             width: '100%',
             maxWidth: '28rem',
             maxHeight: '90vh',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            border: '1px solid #BFA181'
           }}>
             {/* Encabezado */}
-            <div className="bg-blue-600 text-white p-6">
+            <div style={{ backgroundColor: '#1a1a1a', borderBottom: '2px solid #BFA181' }} className="text-white p-6">
               <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Enviar Reporte por Correo</h2>
+                <h2 className="text-xl font-semibold" style={{ color: '#BFA181' }}>Enviar Reporte por Correo</h2>
                 <button
                   onClick={() => {
                     setShowSendModal(false);
@@ -872,22 +1355,23 @@ case 'correccion':
                   <X className="w-6 h-6" />
                 </button>
               </div>
-              <p className="mt-1 text-blue-100 text-sm">
+              <p className="mt-1 text-gray-400 text-sm">
                 Complete los campos para enviar el reporte por correo electrónico.
               </p>
             </div>
 
             {/* Cuerpo del formulario */}
-            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+            <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto" style={{ backgroundColor: '#111111' }}>
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Correo electrónico <span className="text-red-500">*</span>
+                <label className="block text-sm font-medium text-gray-300">
+                  Correo electrónico <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="email"
                   value={recipientEmail}
                   onChange={(e) => setRecipientEmail(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:opacity-50 disabled:bg-gray-50"
+                  className="w-full px-4 py-2 rounded-lg transition-colors text-white placeholder-gray-500"
+                  style={{ backgroundColor: '#1a1a1a', border: '1px solid #3a3a3a' }}
                   placeholder="ejemplo@empresa.com"
                   disabled={isSendingReport}
                   aria-required="true"
@@ -895,13 +1379,14 @@ case 'correccion':
               </div>
 
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-gray-300">
                   Mensaje (opcional)
                 </label>
                 <textarea
                   value={emailMessage}
                   onChange={(e) => setEmailMessage(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors min-h-[100px] disabled:opacity-50 disabled:bg-gray-50"
+                  className="w-full px-4 py-2 rounded-lg transition-colors min-h-[100px] text-white placeholder-gray-500"
+                  style={{ backgroundColor: '#1a1a1a', border: '1px solid #3a3a3a' }}
                   placeholder="Escriba un mensaje personalizado..."
                   disabled={isSendingReport}
                   aria-label="Mensaje opcional para el correo"
@@ -910,22 +1395,22 @@ case 'correccion':
 
               {/* Mensajes de estado */}
               {sendReportError && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-lg flex items-start space-x-2">
-                  <AlertCircle className="flex-shrink-0 w-5 h-5 mt-0.5" />
+                <div className="p-4 bg-red-900/30 border border-red-500 text-red-300 rounded-lg flex items-start space-x-3">
+                  <AlertCircle className="flex-shrink-0 w-5 h-5 mt-0.5 text-red-400" />
                   <span className="text-sm">{sendReportError}</span>
                 </div>
               )}
               
               {sendReportSuccess && (
-                <div className="p-3 bg-green-50 text-green-700 rounded-lg flex items-start space-x-2">
-                  <CheckCircle className="flex-shrink-0 w-5 h-5 mt-0.5" />
+                <div className="p-4 bg-green-900/30 border border-green-500 text-green-300 rounded-lg flex items-start space-x-3">
+                  <CheckCircle className="flex-shrink-0 w-5 h-5 mt-0.5 text-green-400" />
                   <span className="text-sm">{sendReportSuccess}</span>
                 </div>
               )}
             </div>
 
             {/* Pie del modal - Acciones */}
-            <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3 border-t border-gray-200">
+            <div className="px-6 py-4 flex justify-end space-x-3" style={{ backgroundColor: '#1a1a1a', borderTop: '1px solid #3a3a3a' }}>
               <button
                 type="button"
                 onClick={() => {
@@ -936,7 +1421,8 @@ case 'correccion':
                   setSendReportSuccess(null);
                 }}
                 disabled={isSendingReport}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors"
+                className="px-4 py-2 text-sm font-medium text-gray-300 rounded-lg hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 transition-colors"
+                style={{ backgroundColor: '#2a2a2a', border: '1px solid #3a3a3a' }}
               >
                 Cancelar
               </button>
@@ -945,11 +1431,12 @@ case 'correccion':
                 type="button"
                 onClick={handleSendReport}
                 disabled={isSendingReport || !recipientEmail}
-                className={`px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors ${
+                className={`px-4 py-2 text-sm font-medium text-black rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors ${
                   isSendingReport || !recipientEmail
-                    ? 'bg-blue-400 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700'
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'hover:opacity-90'
                 }`}
+                style={{ backgroundColor: '#BFA181' }}
               >
                 {isSendingReport ? (
                   <span className="flex items-center justify-center">
@@ -1092,7 +1579,7 @@ case 'correccion':
                   )}
                 </div>
                 <span className={`status-badge status-${showDetailModal.req.estado}`}>
-                  {showDetailModal.req.estado.charAt(0).toUpperCase() + showDetailModal.req.estado.slice(1)}
+                  {formatEstadoLabel(showDetailModal.req.estado)}
                 </span>
               </div>
 
@@ -1156,12 +1643,27 @@ case 'correccion':
                           ? 'Enviado a corrección' 
                           : 'Requisición Rechazada'}
                       </h4>
+
+                      {/* Motivo de corrección (comentario_rechazo) */}
                       {showDetailModal.req.comentarioRechazo && (
                         <div className="alert-message">
-                          <p className="label">Motivo:</p>
+                          <p className="label">
+                            {showDetailModal.req.estado === 'correccion'
+                              ? 'Motivo de corrección:'
+                              : 'Motivo de corrección (previo):'}
+                          </p>
                           <p className="message">{showDetailModal.req.comentarioRechazo}</p>
                         </div>
                       )}
+
+                      {/* Motivo de rechazo final (comentario_rechazo_f) solo cuando está rechazada */}
+                      {showDetailModal.req.estado === 'rechazada' && showDetailModal.req.comentarioRechazoFinal && (
+                        <div className="alert-message mt-2">
+                          <p className="label">Motivo de rechazo final:</p>
+                          <p className="message">{showDetailModal.req.comentarioRechazoFinal}</p>
+                        </div>
+                      )}
+
                       {showDetailModal.req.fechaUltimoRechazo && (
                         <p className="alert-timestamp">
                           {new Date(showDetailModal.req.fechaUltimoRechazo).toLocaleString()}
@@ -1173,15 +1675,12 @@ case 'correccion':
               )}
 
 
-              {showDetailModal.req.imagenes && showDetailModal.req.imagenes.length > 0 ? (
+              {showDetailModal.req.archivos && showDetailModal.req.archivos.length > 0 ? (
                 <div className="detail-item-full">
                   <label>Archivos adjuntos</label>
                   <div className="file-previews space-y-3">
-                    {showDetailModal.req.imagenes.map((file, index) => {
-                      const isPDF = file.startsWith('data:application/pdf') || 
-                                  file.includes('application/pdf') ||
-                                  (file.includes('JVBERi0') && file.includes('Qk0'));
-                      const imageSrc = file.startsWith('data:') ? file : `data:image/jpeg;base64,${file}`;
+                    {showDetailModal.req.archivos.map((archivo, index) => {
+                      const isPDF = archivo.tipo_mime === 'application/pdf';
                       
                       return (
                         <div key={index} className="file-item p-3 border rounded-lg bg-white shadow-sm">
@@ -1199,10 +1698,10 @@ case 'correccion':
                             </div>
                             <div className="file-info">
                               <span className="file-name font-medium block">
-                                {isPDF ? `Documento ${index + 1}.pdf` : `Imagen ${index + 1}.jpg`}
+                                {archivo.nombre_archivo}
                               </span>
                               <span className="file-type text-sm text-gray-500">
-                                {isPDF ? 'Archivo PDF' : 'Archivo de imagen'}
+                                {archivo.tipo_mime} • {(archivo.tamano / 1024).toFixed(1)} KB
                               </span>
                             </div>
                           </div>
@@ -1225,9 +1724,9 @@ case 'correccion':
                                           </style>
                                         </head>
                                         <body>
-                                          <iframe src="${file}" type="application/pdf">
+                                          <iframe src="${archivo.url}" type="${archivo.tipo_mime}">
                                             <p>Tu navegador no soporta la visualización de PDFs. 
-                                            <a href="${file}">Descarga el PDF</a>.</p>
+                                            <a href="${archivo.url}">Descarga el PDF</a>.</p>
                                           </iframe>
                                         </body>
                                       </html>
@@ -1237,50 +1736,19 @@ case 'correccion':
                                     pdfWindow.document.close();
                                   }
                                 } else {
-                                  const imgWindow = window.open('', '_blank');
-                                  if (imgWindow) {
-                                    imgWindow.document.write(`
-                                      <!DOCTYPE html>
-                                      <html>
-                                        <head>
-                                          <title>Imagen ${index + 1}</title>
-                                          <style>
-                                            body { 
-                                              margin: 0; 
-                                              padding: 20px; 
-                                              display: flex; 
-                                              justify-content: center; 
-                                              align-items: center; 
-                                              height: 100vh; 
-                                              background-color: #f5f5f5; 
-                                            }
-                                            img { 
-                                              max-width: 90%; 
-                                              max-height: 90vh; 
-                                              object-fit: contain; 
-                                              box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-                                              border-radius: 0.5rem;
-                                            }
-                                          </style>
-                                        </head>
-                                        <body>
-                                          <img src="${imageSrc}" alt="Imagen ampliada" />
-                                        </body>
-                                      </html>
-                                    `);
-                                    imgWindow.document.close();
-                                  }
+                                  window.open(archivo.url, '_blank');
                                 }
                               }}
-                              className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-white border border-blue-600 rounded-md hover:bg-blue-50 transition-colors"
+                              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-sm"
                             >
-                              {isPDF ? 'Ver PDF' : 'Ver imagen'}
+                              Ver
                             </button>
-
                             <a
-                              href={file}
-                              download={`${isPDF ? 'Documento' : 'Imagen'}_${(showDetailModal.req?.consecutivo || 'sin-numero').toString().replace(/[^a-zA-Z0-9-_]/g, '')}_${index + 1}${isPDF ? '.pdf' : file.includes('image/') ? '.jpg' : file.includes('application/') ? '.bin' : '.dat'}`}
-                              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                              href={archivo.url}
+                              download={archivo.nombre_archivo}
+                              className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 transition-colors text-sm inline-block"
+                              target="_blank"
+                              rel="noopener noreferrer"
                             >
                               Descargar
                             </a>
