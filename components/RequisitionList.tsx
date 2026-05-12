@@ -85,15 +85,45 @@ export default function RequisitionList({
       case 'rechazado':
       case 'rechazada':
         return 'status-rechazado';
+      case 'en_gestion':
+      case 'en gestion':
+      case 'en gestión':
+        // Mantener el mismo fondo que tenía antes (mismo que pendiente)
+        return 'status-pendiente';
       case 'en proceso':
         return 'status-en-proceso';
       case 'completado':
       case 'completada':
+      case 'cerrada':
         return 'status-completado';
       case 'correccion':
         return 'status-correccion';
       default:
         return 'status-pendiente';
+    }
+  }
+
+  // Función para formatear el texto del estado
+  const formatStatusText = (status: string) => {
+    const statusLower = status.toLowerCase();
+    switch(statusLower) {
+      case 'cerrada':
+      case 'completada':
+        return 'Completada';
+      case 'pendiente':
+        return 'Pendiente';
+      case 'aprobada':
+        return 'Aprobada';
+      case 'rechazada':
+        return 'Rechazada';
+      case 'correccion':
+        return 'En corrección';
+      case 'en_gestion':
+      case 'en gestion':
+      case 'en gestión':
+        return 'En gestión';
+      default:
+        return status.charAt(0).toUpperCase() + status.slice(1);
     }
   }
 
@@ -184,7 +214,7 @@ export default function RequisitionList({
                   <span>{requisition.consecutivo || 'S/N'}</span>
                 </div>
                 <span className={`requisition-status ${getStatusColor(requisition.estado)}`}>
-                  {requisition.estado || 'Pendiente'}
+                  {formatStatusText(requisition.estado) || 'Pendiente'}
                 </span>
               </div>
               

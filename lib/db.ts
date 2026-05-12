@@ -1,4 +1,5 @@
 import mysql, { Pool, PoolOptions, RowDataPacket } from 'mysql2/promise';
+import { logger } from '@/utils/logger';
 
 // Configuración de la conexión a la base de datos
 const dbConfig: PoolOptions = {
@@ -31,7 +32,9 @@ const dbConfig: PoolOptions = {
   } : undefined,
   
   // Manejo de errores
-  debug: process.env.NODE_ENV === 'development'
+  // Desactivar logs internos muy verbosos de mysql2.
+  // Si algún día quieres verlos, define DB_DEBUG=true en tu .env
+  debug: process.env.DB_DEBUG === 'true'
 };
 
 // Crear el pool de conexiones
@@ -42,7 +45,7 @@ async function initializeDatabase() {
   let connection;
   try {
     connection = await pool.getConnection();
-    console.log('✅ Conexión exitosa a la base de datos');
+    logger.info('Conexión exitosa a la base de datos');
     
     // Verificar si la base de datos existe, si no, crearla
     await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
@@ -69,10 +72,10 @@ async function initializeDatabase() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
     
-    console.log('✅ Base de datos y tablas verificadas/creadas correctamente');
+    logger.info('Base de datos y tablas verificadas/creadas correctamente');
     
   } catch (error) {
-    console.error('❌ Error al inicializar la base de datos:', error);
+    logger.error('Error al inicializar la base de datos', error);
     throw error;
   } finally {
     if (connection) await connection.release();
@@ -81,7 +84,7 @@ async function initializeDatabase() {
 
 // Inicializar la base de datos al cargar el módulo
 initializeDatabase().catch(error => {
-  console.error('❌ Error crítico al inicializar la base de datos:', error);
+  logger.error('Error crítico al inicializar la base de datos', error);
   // Considerar terminar la aplicación si no se puede conectar a la base de datos
   // process.exit(1);
 });
@@ -109,11 +112,12 @@ export async function query<T = any>(sql: string, values?: any, connection?: any
       return rows as unknown as T;
       
     } catch (error: any) {
-      console.error('Error en la consulta (intentos restantes:', retries - 1, '):', {
+      logger.error('Error en la consulta', {
+        intentosRestantes: retries - 1,
         sql,
         values,
-        error: error.message,
-        code: error.code
+        mensaje: error.message,
+        codigo: error.code,
       });
       
       // Si es un error de conexión, esperar un momento antes de reintentar
@@ -134,7 +138,7 @@ export async function query<T = any>(sql: string, values?: any, connection?: any
         try {
           await conn.release();
         } catch (releaseError) {
-          console.error('Error al liberar la conexión:', releaseError);
+          logger.error('Error al liberar la conexión', releaseError);
         }
       }
     }
@@ -153,7 +157,7 @@ export async function withTransaction<T>(callback: (connection: any) => Promise<
     return result;
   } catch (error) {
     await connection.rollback();
-    console.error('Error en la transacción:', error);
+    logger.error('Error en la transacción', error);
     throw error;
   } finally {
     await connection.release();

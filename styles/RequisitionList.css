@@ -253,6 +253,26 @@
   color: #92400e;
 }
 
+.status-completado {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-aprobado {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-rechazado {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.status-correccion {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
 .requisition-actions button:first-child {
   background-color: #8ccf8cd7; /* Azul más claro */
   color: white;

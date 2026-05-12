@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { logger } from '@/utils/logger';
 
 // Configuración del transporte de correo
 const transporter = nodemailer.createTransport({
@@ -56,10 +57,10 @@ export async function enviarNotificacionRequisicion(
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log('Correo de notificación enviado:', info.messageId);
+    logger.info('Correo de notificación enviado', { messageId: info.messageId, to });
     return true;
   } catch (error) {
-    console.error('Error al enviar el correo de notificación:', error);
+    logger.error('Error al enviar el correo de notificación', error);
     return false;
   }
 }

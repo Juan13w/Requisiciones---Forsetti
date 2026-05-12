@@ -11,9 +11,11 @@ export async function GET() {
         fecha_solicitud,
         proceso,
         descripcion,
+        justificacion,
+        cantidad,
         estado,
-        comentario_rechazo as comentarioRechazo,
-        CONCAT('data:image/jpeg;base64,', TO_BASE64(img)) as img
+        comentario_rechazo,
+        NULL as img
       FROM requisicion
       ORDER BY fecha_solicitud DESC
     `);

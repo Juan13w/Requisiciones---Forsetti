@@ -17,14 +17,22 @@ interface Dia {
   aprobadas: number; 
   rechazadas: number; 
   pendientes: number; 
+  en_gestion: number;
+  completadas: number;
   total: number; 
 }
 interface ChartDataResponse { porEstado: Estado[]; porProceso: Proceso[]; porDia: Dia[]; }
 
-export default function RequisitionCharts() {
+interface RequisitionChartsProps {
+  selectedMonths?: string[];
+}
+
+export default function RequisitionCharts({ selectedMonths = [] }: RequisitionChartsProps) {
   const [chartData, setChartData] = useState<ChartDataResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
   
   const barChartRef = useRef<HTMLCanvasElement>(null);
   const lineChartRef = useRef<HTMLCanvasElement>(null);
@@ -37,57 +45,107 @@ export default function RequisitionCharts() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch("/api/requisiciones/estadisticas");
+        setLoading(true);
+        setError(null);
+        
+        // Optimización: usar meses seleccionados del dashboard
+        const queryParams = new URLSearchParams({ year: selectedYear.toString() });
+        
+        if (selectedMonths.length > 0) {
+          // Usar múltiples meses del dashboard
+          selectedMonths.forEach(month => {
+            queryParams.append('months', month);
+          });
+        } else if (selectedMonth !== null) {
+          // Compatibilidad con filtro individual de gráficas
+          queryParams.append('month', selectedMonth.toString());
+        }
+        
+        // Agregar timeout para producción
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos
+        
+        const response = await fetch(`/api/requisiciones/estadisticas?${queryParams}`, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
         if (!response.ok) throw new Error("Error en la API");
         const data = await response.json();
         setChartData(data.data);
       } catch (err) {
-        setError("Error al cargar estadísticas");
+        if (err instanceof Error && err.name === 'AbortError') {
+          setError("Tiempo de espera agotado. Intente con menos meses o reduzca el rango.");
+        } else {
+          setError("Error al cargar estadísticas");
+        }
+        setChartData(null);
       } finally {
         setLoading(false);
       }
     };
     fetchStats();
-  }, []);
+  }, [selectedYear, selectedMonth, selectedMonths]);
 
   useEffect(() => {
     if (!chartData) return;
 
     const { porEstado, porProceso, porDia } = chartData;
 
-    // Crear array de meses para 2025
-    const meses2025 = Array.from({ length: 12 }, (_, i) => {
-      const mes = i + 1;
-      return {
-        fecha: `2025-${String(mes).padStart(2, '0')}-01`,
-        mes_anio: new Date(2025, i, 1).toLocaleDateString('es-ES', { 
-          month: 'long', 
-          year: 'numeric' 
-        }),
-        aprobadas: 0,
-        rechazadas: 0,
-        pendientes: 0,
-        total: 0
-      };
-    });
+    // Crear array de meses según los seleccionados o todos si no hay selección
+    const mesesAMostrar = selectedMonths.length > 0 
+      ? selectedMonths.map(monthStr => {
+          const [year, month] = monthStr.split('-');
+          return {
+            fecha: `${monthStr}-01`,
+            mes_anio: new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString('es-ES', { 
+              month: 'long', 
+              year: 'numeric' 
+            }),
+            aprobadas: 0,
+            rechazadas: 0,
+            pendientes: 0,
+            en_gestion: 0,
+            completadas: 0,
+            total: 0
+          };
+        })
+      : Array.from({ length: 12 }, (_, i) => {
+          const mes = i + 1;
+          return {
+            fecha: `${selectedYear}-${String(mes).padStart(2, '0')}-01`,
+            mes_anio: new Date(selectedYear, i, 1).toLocaleDateString('es-ES', { 
+              month: 'long', 
+              year: 'numeric' 
+            }),
+            aprobadas: 0,
+            rechazadas: 0,
+            pendientes: 0,
+            en_gestion: 0,
+            completadas: 0,
+            total: 0
+          };
+        });
 
-    // Combinar con datos reales de 2025 - CORREGIDO para zona horaria
-    const datosCompletos = meses2025.map(mes => {
+    // Combinar con datos reales usando el mes-año como clave
+    const datosCompletos = mesesAMostrar.map(mes => {
+      // Extraer YYYY-MM de la fecha del mes a mostrar
+      const mesKey = mes.fecha.substring(0, 7); // YYYY-MM
+      
+      // Buscar datos reales que coincidan con el mismo YYYY-MM
       const datosMes = porDia.find(d => {
-        // Extraer mes directamente del string YYYY-MM-DD sin parsear Date
-        const mesDato = parseInt(d.fecha.split('-')[1]);
-        const mesBuscado = parseInt(mes.fecha.split('-')[1]);
-        return mesDato === mesBuscado;
+        const datoKey = d.fecha.substring(0, 7); // YYYY-MM
+        return datoKey === mesKey;
       });
+      
       return datosMes || mes;
     });
 
-    // Ordenar por fecha - CORREGIDO para evitar problemas de zona horaria
-    const datosOrdenados = [...datosCompletos].sort((a, b) => {
-      const [yearA, monthA] = a.fecha.split('-').map(Number);
-      const [yearB, monthB] = b.fecha.split('-').map(Number);
-      return yearA !== yearB ? yearA - yearB : monthA - monthB;
-    }).filter(item => item.fecha.startsWith('2025'));
+    // Ordenar por fecha
+    const datosOrdenados = datosCompletos.sort((a: any, b: any) => {
+      return a.fecha.localeCompare(b.fecha);
+    });
 
     // Destruir gráficos anteriores
     if (barChartInstance.current) barChartInstance.current.destroy();
@@ -113,24 +171,40 @@ export default function RequisitionCharts() {
                 data: datosOrdenados.map(d => d.aprobadas), 
                 backgroundColor: "#4CAF50",
                 borderRadius: 4,
-                barThickness: 20,
-                maxBarThickness: 25
+                barThickness: 18,
+                maxBarThickness: 22
               },
               { 
                 label: "Pendientes", 
                 data: datosOrdenados.map(d => d.pendientes), 
                 backgroundColor: "#2196F3",
                 borderRadius: 4,
-                barThickness: 20,
-                maxBarThickness: 25
+                barThickness: 18,
+                maxBarThickness: 22
+              },
+              { 
+                label: "En gestión", 
+                data: datosOrdenados.map(d => d.en_gestion), 
+                backgroundColor: "#FF9800",
+                borderRadius: 4,
+                barThickness: 18,
+                maxBarThickness: 22
               },
               { 
                 label: "Rechazadas", 
                 data: datosOrdenados.map(d => d.rechazadas), 
                 backgroundColor: "#F44336",
                 borderRadius: 4,
-                barThickness: 20,
-                maxBarThickness: 25
+                barThickness: 18,
+                maxBarThickness: 22
+              },
+              { 
+                label: "Completadas", 
+                data: datosOrdenados.map(d => d.completadas), 
+                backgroundColor: "#9E9E9E",
+                borderRadius: 4,
+                barThickness: 18,
+                maxBarThickness: 22
               },
             ],
           },
@@ -183,7 +257,7 @@ export default function RequisitionCharts() {
                   },
                   title: function(tooltipItems: any[]) {
                     const dataIndex = tooltipItems[0].dataIndex;
-                    const [year, month] = datosOrdenados[dataIndex]?.fecha.split('-').map(Number) || [2025, 1];
+                    const [year, month] = datosOrdenados[dataIndex]?.fecha.split('-').map(Number) || [selectedYear, 1];
                     const mesesNombres = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
                     return `${mesesNombres[month - 1]} ${year}`.toUpperCase();
                   }
@@ -339,7 +413,11 @@ export default function RequisitionCharts() {
                 font: {
                   size: 14,
                   weight: 'bold'
-                }
+                },
+                padding: {
+                  top: 10,
+                  bottom: 20,
+                },
               }, 
               legend: { 
                 position: "right" 
@@ -365,6 +443,27 @@ export default function RequisitionCharts() {
 
   return (
     <div className="space-y-8">
+      <div className="flex justify-end mb-2 gap-4">
+        <label className="flex items-center gap-2 text-sm font-medium text-white">
+          <span>Año:</span>
+          <select
+            className="border rounded px-2 py-1 text-sm bg-black text-white border-white"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+          >
+            <option value={2026}>2026</option>
+            <option value={2025}>2025</option>
+          </select>
+        </label>
+        {selectedMonth !== null && (
+          <div className="flex items-center gap-2 text-sm font-medium text-white">
+            <span>Filtro activo:</span>
+            <span className="bg-blue-600 px-2 py-1 rounded text-xs">
+              {new Date(selectedYear, selectedMonth - 1).toLocaleDateString('es-ES', { month: 'long' })}
+            </span>
+          </div>
+        )}
+      </div>
       {/* Gráfica de barras */}
       <div className="bg-white p-6 rounded-lg shadow">
         <div style={{ height: '400px' }}>
@@ -389,11 +488,11 @@ export default function RequisitionCharts() {
       {/* Cuadro de Resumen */}
       <div className="bg-white p-6 rounded-lg shadow">
         <div className="border-b pb-4 mb-4">
-          <h3 className="text-lg font-bold">Resumen de Procesos</h3>
+          <h3 className="text-lg font-bold">Top 5 Procesos con Más Requisiciones</h3>
         </div>
         
         <div className="space-y-2">
-          {porProceso.map((item, index) => (
+          {porProceso.slice(0, 5).map((item: any, index: number) => (
             <div key={index} className="flex items-center justify-between py-3 border-b last:border-b-0">
               <div className="flex items-center gap-3">
                 <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -411,7 +510,7 @@ export default function RequisitionCharts() {
           <div className="flex items-center justify-between pt-4 mt-4 border-t-2 font-bold">
             <span>Total</span>
             <span>
-              {porProceso.reduce((sum, item) => sum + item.cantidad, 0)} solicitudes
+              {porProceso.reduce((sum: number, item: any) => sum + item.cantidad, 0)} solicitudes
             </span>
           </div>
         </div>

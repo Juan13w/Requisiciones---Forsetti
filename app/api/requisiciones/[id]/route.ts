@@ -12,8 +12,9 @@ interface UpdateResult {
  * Acepta 'estado', 'comentarioRechazo', 'fechaUltimoRechazo', 'intentosRevision'.
  */
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  const requisicionId = parseInt(params.id, 10);
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const requisicionId = parseInt(id, 10);
   if (isNaN(requisicionId) || requisicionId <= 0) {
     return NextResponse.json({ success: false, error: 'ID de requisición no válido' }, { status: 400 });
   }
@@ -37,7 +38,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ success: false, error: 'El campo estado es requerido' }, { status: 400 });
     }
 
-    const validStates = ['pendiente', 'aprobada', 'rechazada', 'correccion', 'cerrada'];
+    const validStates = ['pendiente', 'en_gestion', 'aprobada', 'rechazada', 'correccion', 'completada'];
     if (!validStates.includes(estado)) {
       return NextResponse.json({ success: false, error: `Estado no válido: ${estado}` }, { status: 400 });
     }
@@ -51,7 +52,16 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     // Mapear nombres del body (camelCase) a columnas reales (snake_case)
     if (comentarioRechazo !== undefined) {
-      fieldsToUpdate.push('comentario_rechazo = ?');
+      // Cuando la requisición se envía a corrección, se guarda en comentario_rechazo
+      // Cuando la requisición se rechaza de forma definitiva, se guarda en comentario_rechazo_f
+      if (estado === 'correccion') {
+        fieldsToUpdate.push('comentario_rechazo = ?');
+      } else if (estado === 'rechazada') {
+        fieldsToUpdate.push('comentario_rechazo_f = ?');
+      } else {
+        // Para otros estados, mantenemos el comportamiento anterior por compatibilidad
+        fieldsToUpdate.push('comentario_rechazo = ?');
+      }
       values.push(comentarioRechazo);
     }
     if (fechaUltimoRechazo !== undefined) {
@@ -83,6 +93,28 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (proceso !== undefined) {
       fieldsToUpdate.push('proceso = ?');
       values.push(proceso);
+    }
+
+    // Si es una aprobación, obtener el usuario que aprueba
+    let aprobadorId = null;
+    let aprobadorNombre = null;
+    
+    if (estado === 'aprobada') {
+      // Aquí deberías obtener el ID del usuario logueado
+      // Por ahora, usaremos el nombre del solicitante como referencia
+      // TODO: Implementar obtención del usuario actual desde sesión o token
+      const usuarioActual = body.usuarioActual || 'Sistema'; // Deberías pasar esto desde el frontend
+      
+      // Debug: Ver qué está llegando
+      console.log('DEBUG: usuarioActual recibido:', body.usuarioActual);
+      console.log('DEBUG: usuarioActual final:', usuarioActual);
+      
+      // Guardar en requisicion (para PDF) - ANTES de ejecutar la consulta
+      fieldsToUpdate.push('aprobado_por = ?');
+      values.push(usuarioActual);
+      
+      // Guardar para historial
+      aprobadorNombre = usuarioActual;
     }
 
     // Actualizar los campos de la requisición
@@ -142,14 +174,13 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       }
     }
 
-  
-
     // Registrar el cambio en el historial
     try {
       const comentarioParaHistorial = comentarioRechazo || 'Requisición actualizada';
+      
       await query(
-        'INSERT INTO requisicion_historial (requisicion_id, estado, comentario) VALUES (?, ?, ?)',
-        [requisicionId, estado, comentarioParaHistorial]
+        'INSERT INTO requisicion_historial (requisicion_id, estado, comentario, aprobador_nombre) VALUES (?, ?, ?, ?)',
+        [requisicionId, estado, comentarioParaHistorial, aprobadorNombre]
       );
     } catch (histErr) {
       console.warn('No se pudo registrar historial de requisición:', histErr);
@@ -158,7 +189,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     // Obtener la requisición actualizada con los archivos adjuntos
     const updatedRows = await query(
-      `SELECT r.*
+      `SELECT 
+         r.*, 
+         r.comentario_rechazo as comentarioRechazo,
+         r.comentario_rechazo_f as comentarioRechazoFinal
        FROM requisicion r 
        WHERE r.requisicion_id = ?`,
       [requisicionId]
@@ -238,8 +272,9 @@ const archivos = Array.isArray(archivosResult) ? archivosResult : [];
 /**
  * Maneja las solicitudes GET para obtener los detalles de una única requisición.
  */
-export async function GET(request: Request, { params }: { params: { id: string } }) {
-  const requisicionId = parseInt(params.id, 10);
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const requisicionId = parseInt(id, 10);
   if (isNaN(requisicionId) || requisicionId <= 0) {
     return NextResponse.json({ success: false, error: 'ID de requisición no válido' }, { status: 400 });
   }
@@ -261,6 +296,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         r.fecha_creacion as fechaCreacion,
         r.intentos_revision as intentosRevision,
         COALESCE(r.comentario_rechazo, '') as comentarioRechazo,
+        COALESCE(r.comentario_rechazo_f, '') as comentarioRechazoFinal,
         DATE_FORMAT(r.fecha_ultimo_rechazo, '%Y-%m-%d %H:%i:%s') as fechaUltimoRechazo,
         DATE_FORMAT(r.fecha_ultima_modificacion, '%Y-%m-%d %H:%i:%s') as fechaUltimaModificacion
       FROM requisicion r
@@ -276,6 +312,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
       ...rows[0],
       // Aseguramos que estos campos siempre estén definidos
       comentarioRechazo: rows[0].comentarioRechazo || '',
+      comentarioRechazoFinal: rows[0].comentarioRechazoFinal || '',
       fechaUltimoRechazo: rows[0].fechaUltimoRechazo || null,
       justificacion_ti: rows[0].justificacion_ti || '' // Aseguramos que siempre tenga un valor
     };
@@ -308,12 +345,13 @@ export async function GET(request: Request, { params }: { params: { id: string }
 /**
  * Maneja las solicitudes DELETE para eliminar una requisición.
  */
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  console.log('Solicitud DELETE recibida para la requisición ID:', params.id);
-  const requisicionId = parseInt(params.id, 10);
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  console.log('Solicitud DELETE recibida para la requisición ID:', id);
+  const requisicionId = parseInt(id, 10);
   
   if (isNaN(requisicionId) || requisicionId <= 0) {
-    console.error('ID de requisición no válido:', params.id);
+    console.error('ID de requisición no válido:', id);
     return NextResponse.json({ success: false, error: 'ID de requisición no válido' }, { status: 400 });
   }
 
@@ -330,7 +368,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     console.log('Eliminando historial de estados relacionado...');
     try {
       // Primero, eliminar el historial relacionado si existe
-      await query('DELETE FROM historial_estados WHERE requisicion_id = ?', [requisicionId]);
+      await query('DELETE FROM requisicion_historial WHERE requisicion_id = ?', [requisicionId]);
       console.log('Historial de estados eliminado correctamente');
     } catch (historyError) {
       console.warn('No se pudo eliminar el historial de estados (puede que no exista):', historyError);

@@ -14,7 +14,7 @@ type RequisitionFormData = Omit<Requisition, "id" | "fechaCreacion" | "fechaUlti
 };
 
 interface RequisitionFormProps {
-  onSave: (requisition: RequisitionFormData) => void;
+  onSave: (requisition: RequisitionFormData) => Promise<void> | void;
   onCancel: () => void;
   initialData?: RequisitionFormData;
 }
@@ -65,8 +65,10 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   });
 
   // Actualizar la hora de la solicitud justo antes de guardar
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isSubmitting) return;
     
     // Validar campos requeridos
     if (!formData.descripcion?.trim()) {
@@ -88,13 +90,20 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
       fechaSolicitud: getCurrentDateTime(),
       estado: formData.estado || 'pendiente'
     };
-    
-    // Llamar a la función onSave con los datos actualizados
-    onSave(updatedFormData);
+
+    try {
+      setIsSubmitting(true);
+      await Promise.resolve(onSave(updatedFormData));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Lista de empresas disponibles
-  const empresasDisponibles = ["SCI", "EMTRA", "INPROSALUD", "SIMADRID", "EMTRASUR", "INCORPORANDO", "OTRA_EMPRESA"]; // Ajusta según tus necesidades
+  const empresasDisponibles = ["SCI", "EMTRA", "INPROSALUD", "SIMADRID", "EMTRASUR", "INCORPORANDO", "SERVISALUD", "ACCESALUD", "INPROSALUDPLUS"]; // Ajusta según tus necesidades
+  
+  // Lista de empresas específicas para xiomara
+  const empresasParaXiomara = ["INPROSALUD", "ACCESALUD", "IMPROSALUDPLUS", "SERVISALUD"];
   
   // Cargar datos del usuario desde localStorage
   useEffect(() => {
@@ -108,7 +117,7 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
         
         // Verificar si el usuario es un coordinador con empresa asignada
         const isCoordinatorWithCompany = user.rol === 'coordinador' && user.empresa;
-        const isSpecialUser = user.email === 'rulexor.monasterios@solucionescorp.com.co' || user.empresa === 'multiple';
+        const isSpecialUser = user.email === 'rulexor.monasterios@solucionescorp.com.co' || user.email === 'xiomara.jimenez@inprosalud.co' || user.empresa === 'multiple';
         
         // Actualizar el estado del formulario
         setFormData(prev => {
@@ -268,7 +277,7 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   
             <div className="form-field">
               <label className="form-label">Empresa</label>
-              {formData.nombreSolicitante === 'rulexor.monasterios@solucionescorp.com.co' || (formData.empresa && localStorage.getItem('usuarioData') && JSON.parse(localStorage.getItem('usuarioData') || '{}').empresa === 'multiple') ? (
+              {formData.nombreSolicitante === 'rulexor.monasterios@solucionescorp.com.co' || formData.nombreSolicitante === 'xiomara.jimenez@inprosalud.co' || (formData.empresa && localStorage.getItem('usuarioData') && JSON.parse(localStorage.getItem('usuarioData') || '{}').empresa === 'multiple') ? (
                 <select
                   name="empresa"
                   value={formData.empresa}

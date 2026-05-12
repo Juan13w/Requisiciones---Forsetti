@@ -25,6 +25,7 @@ export interface Requisition {
   fechaCreacion: number; // timestamp
   intentosRevision?: number;
   comentarioRechazo?: string;
+  comentarioRechazoFinal?: string;
   fechaUltimoRechazo?: string;
   fechaUltimaModificacion?: string;
 }

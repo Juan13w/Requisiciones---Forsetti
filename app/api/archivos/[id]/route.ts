@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const archivoId = params.id;
+    const { id: archivoId } = await params;
 
     const [rows]: any[] = await pool.query(
       'SELECT nombre_archivo, ruta_archivo, tipo_mime FROM requisicion_archivos WHERE archivo_id = ?',
@@ -36,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       );
     }
 
-    return new NextResponse(buffer, {
+    return new NextResponse(buffer as any, {
       headers: {
         'Content-Type': archivo.tipo_mime || 'application/pdf',
         'Content-Disposition': `inline; filename="${archivo.nombre_archivo}"`
