@@ -388,18 +388,50 @@ export default function RequisitionCharts({ selectedMonths = [] }: RequisitionCh
       }
     }
 
-    // Gráfico de pastel
+    // Gráfico de pastel optimizado para muchos procesos
     if (pieChartRef.current && porProceso.length > 0) {
       const ctx = pieChartRef.current.getContext('2d');
       if (ctx) {
+        // Si hay muchos procesos, agrupar los más pequeños en "Otros"
+        let datosProcesos = [...porProceso];
+        let mostrarOtros = false;
+        
+        if (porProceso.length > 8) {
+          // Ordenar por cantidad y tomar los top 7
+          datosProcesos = porProceso
+            .sort((a, b) => b.cantidad - a.cantidad)
+            .slice(0, 7);
+          
+          // Calcular "Otros"
+          const otrosTotal = porProceso
+            .slice(7)
+            .reduce((sum, item) => sum + item.cantidad, 0);
+          
+          if (otrosTotal > 0) {
+            datosProcesos.push({
+              proceso: 'Otros procesos',
+              cantidad: otrosTotal,
+              porcentaje: Number(((otrosTotal / porProceso.reduce((sum, item) => sum + item.cantidad, 0)) * 100).toFixed(2))
+            });
+            mostrarOtros = true;
+          }
+        }
+
+        // Generar colores dinámicamente
+        const colores = [
+          "#4CAF50", "#2196F3", "#FFC107", "#9C27B0", "#607D8B", 
+          "#FF5722", "#00BCD4", "#795548", "#FF9800", "#E91E63",
+          "#3F51B5", "#009688", "#FFEB3B", "#CDDC39", "#8BC34A"
+        ];
+
         pieChartInstance.current = new ChartJS(ctx, {
           type: 'pie',
           data: {
-            labels: porProceso.map(p => p.proceso),
+            labels: datosProcesos.map(p => p.proceso),
             datasets: [{
-              data: porProceso.map(p => p.cantidad),
-              backgroundColor: ["#4CAF50","#2196F3","#FFC107","#9C27B0","#607D8B","#FF5722","#00BCD4"].slice(0, porProceso.length),
-              borderWidth: 1,
+              data: datosProcesos.map(p => p.cantidad),
+              backgroundColor: colores.slice(0, datosProcesos.length),
+              borderWidth: 2,
               borderColor: '#fff'
             }],
           },
@@ -409,7 +441,7 @@ export default function RequisitionCharts({ selectedMonths = [] }: RequisitionCh
             plugins: { 
               title: { 
                 display: true, 
-                text: "Distribución por Proceso",
+                text: mostrarOtros ? "Top 7 Procesos + Otros" : "Distribución por Proceso",
                 font: {
                   size: 14,
                   weight: 'bold'
@@ -420,9 +452,57 @@ export default function RequisitionCharts({ selectedMonths = [] }: RequisitionCh
                 },
               }, 
               legend: { 
-                position: "right" 
-              } 
+                position: "right",
+                labels: {
+                  boxWidth: 12,
+                  padding: 8,
+                  font: {
+                    size: 11
+                  },
+                  generateLabels: function(chart: any) {
+                    const data = chart.data;
+                    if (data.labels?.length && data.datasets?.length) {
+                      return data.labels.map((label: string, i: number) => {
+                        const dataset = data.datasets[0];
+                        const value = dataset.data[i] as number;
+                        const total = dataset.data.reduce((a: number, b: number) => a + b, 0);
+                        const percentage = ((value / total) * 100).toFixed(1);
+                        const bgColor = Array.isArray(dataset.backgroundColor) 
+                          ? dataset.backgroundColor[i] 
+                          : dataset.backgroundColor;
+                        
+                        return {
+                          text: `${label}: ${value} (${percentage}%)`,
+                          fillStyle: bgColor,
+                          hidden: false,
+                          index: i
+                        };
+                      });
+                    }
+                    return [];
+                  }
+                }
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const label = context.label || '';
+                    const value = context.parsed;
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                    const percentage = ((value / total) * 100).toFixed(1);
+                    return `${label}: ${value} (${percentage}%)`;
+                  }
+                }
+              }
             },
+            layout: {
+              padding: {
+                right: 20,
+                left: 20,
+                top: 10,
+                bottom: 10
+              }
+            }
           }
         });
       }
