@@ -64,8 +64,6 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('📦 Creando requisición para coordinador ID:', coordinadorId);
-
     // Iniciar transacción
     connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -199,7 +197,6 @@ async function enviarNotificacionRequisicionAsync(email: string, requisicionId: 
           creado_por: reqData.nombre_solicitante || 'Usuario desconocido'
         });
         
-        console.log('📧 Correo de notificación enviado');
       }
     } finally {
       tempConnection.release();

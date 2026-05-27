@@ -22,9 +22,6 @@ export async function GET() {
       // Liberar la conexión
       connection.release();
       
-      console.log('Coordinadores:', JSON.stringify(coordinators, null, 2));
-      console.log('Compradores:', JSON.stringify(purchasers, null, 2));
-      
       return NextResponse.json({
         success: true,
         data: {

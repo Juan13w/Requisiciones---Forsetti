@@ -43,7 +43,8 @@ export default function DashboardLayout({
     }
   }, [router]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
     localStorage.removeItem('usuarioLogueado');
     localStorage.removeItem('usuarioData');
     router.push('/');

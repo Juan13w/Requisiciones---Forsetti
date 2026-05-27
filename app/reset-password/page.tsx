@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import './ResetPassword.css'
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const [token, setToken] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -246,5 +246,13 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="reset-password-page"><div className="reset-password-container"><div className="reset-password-form"><div className="validation-loading"><div className="spinner"></div><p>Cargando...</p></div></div></div></div>}>
+      <ResetPasswordContent />
+    </Suspense>
   )
 }

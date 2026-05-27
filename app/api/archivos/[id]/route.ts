@@ -16,9 +16,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const archivo = rows[0];
 
-    console.log('📂 ruta_archivo:', archivo.ruta_archivo);
-    console.log('📂 Tipo:', typeof archivo.ruta_archivo);
-
     let buffer: Buffer;
 
     if (Buffer.isBuffer(archivo.ruta_archivo)) {

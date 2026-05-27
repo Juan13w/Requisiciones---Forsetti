@@ -12,9 +12,10 @@ interface HistEntry {
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const requisicionId = parseInt(params.id, 10);
+  const { id } = await params;
+  const requisicionId = parseInt(id, 10);
   if (isNaN(requisicionId) || requisicionId <= 0) {
     return NextResponse.json({ success: false, error: 'ID inválido' }, { status: 400 });
   }

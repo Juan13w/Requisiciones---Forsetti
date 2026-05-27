@@ -5,13 +5,13 @@ import { RowDataPacket, ResultSetHeader } from 'mysql2';
 // Update a user
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const connection = await pool.getConnection();
-  
+
   try {
     const { email, role, empresa, clave } = await request.json();
-    const { id } = params;
+    const { id } = await params;
 
     if (!email) {
       return NextResponse.json(
@@ -98,14 +98,14 @@ export async function PUT(
 // Delete a user
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const connection = await pool.getConnection();
-  
+
   try {
     const { searchParams } = new URL(request.url);
     const role = searchParams.get('role');
-    const { id } = params;
+    const { id } = await params;
 
     if (!role) {
       return NextResponse.json(

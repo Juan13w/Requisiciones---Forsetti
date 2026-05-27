@@ -285,8 +285,6 @@ const addHeaderToPage = (currentPage: number) => {
       ];
     });
 
-    // Generar la tabla
-    console.log('Generando tabla...');
   // @ts-ignore - Ignorar errores de tipo para autoTable
       doc.autoTable({
         head: [tableColumn],
@@ -330,8 +328,6 @@ const addHeaderToPage = (currentPage: number) => {
         }
       });
 
-    // Guardar el PDF
-    console.log('Guardando PDF...');
     const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
 
     // Crear directorio de reportes si no existe
@@ -344,10 +340,8 @@ const addHeaderToPage = (currentPage: number) => {
     const fileName = `reporte_requisiciones_${Date.now()}.pdf`;
     const filePath = join(uploadDir, fileName);
 
-    // Guardar el archivo
     await writeFile(filePath, pdfBuffer);
-    console.log('PDF generado exitosamente:', fileName);
-    
+
     // Devolver la URL del archivo generado
     return NextResponse.json({ 
       success: true, 

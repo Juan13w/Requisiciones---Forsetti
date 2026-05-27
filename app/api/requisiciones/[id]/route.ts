@@ -105,10 +105,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       // TODO: Implementar obtención del usuario actual desde sesión o token
       const usuarioActual = body.usuarioActual || 'Sistema'; // Deberías pasar esto desde el frontend
       
-      // Debug: Ver qué está llegando
-      console.log('DEBUG: usuarioActual recibido:', body.usuarioActual);
-      console.log('DEBUG: usuarioActual final:', usuarioActual);
-      
       // Guardar en requisicion (para PDF) - ANTES de ejecutar la consulta
       fieldsToUpdate.push('aprobado_por = ?');
       values.push(usuarioActual);
@@ -347,7 +343,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
  */
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  console.log('Solicitud DELETE recibida para la requisición ID:', id);
   const requisicionId = parseInt(id, 10);
   
   if (isNaN(requisicionId) || requisicionId <= 0) {
@@ -356,7 +351,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   }
 
   try {
-    console.log('Verificando si la requisición existe...');
     // Verificar primero si la requisición existe
     const [existing] = await query<any[]>('SELECT 1 FROM requisicion WHERE requisicion_id = ?', [requisicionId]);
     
@@ -365,22 +359,15 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       return NextResponse.json({ success: false, error: 'Requisición no encontrada' }, { status: 404 });
     }
 
-    console.log('Eliminando historial de estados relacionado...');
     try {
-      // Primero, eliminar el historial relacionado si existe
       await query('DELETE FROM requisicion_historial WHERE requisicion_id = ?', [requisicionId]);
-      console.log('Historial de estados eliminado correctamente');
     } catch (historyError) {
       console.warn('No se pudo eliminar el historial de estados (puede que no exista):', historyError);
       // Continuamos aunque falle, ya que el historial podría no existir
     }
     
-    console.log('Eliminando la requisición...');
-    // Luego, eliminar la requisición
     const result = await query('DELETE FROM requisicion WHERE requisicion_id = ?', [requisicionId]) as unknown as { affectedRows: number };
-    
-    console.log('Resultado de la eliminación:', result);
-    
+
     if (result.affectedRows === 0) {
       console.error('No se afectaron filas al intentar eliminar la requisición');
       return NextResponse.json({ success: false, error: 'No se pudo eliminar la requisición' }, { status: 500 });

@@ -38,12 +38,12 @@ export default function Home() {
       if (usuarioLogueado && usuarioData) {
         try {
           const user = JSON.parse(usuarioData);
-          // Redirigir según el rol del usuario
-          if (user.rol === 'admin') {
-            router.replace('/admin');
-          } else {
-            router.replace('/dashboard');
-          }
+          const rutas: Record<string, string> = {
+            admin: '/admin',
+            coordinador: '/dashboard',
+            compras: '/dashboard-compras',
+          };
+          router.replace(rutas[user.rol] ?? '/dashboard');
         } catch (error) {
           console.error('Error al analizar los datos del usuario:', error);
           router.replace('/');
@@ -61,13 +61,13 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('usuarioLogueado', 'true');
       localStorage.setItem('usuarioData', JSON.stringify(userData));
-      
-      // Redirigir según el rol del usuario
-      if (userData.rol === 'admin') {
-        router.replace('/admin');
-      } else {
-        router.replace('/dashboard');
-      }
+
+      const rutas: Record<string, string> = {
+        admin: '/admin',
+        coordinador: '/dashboard',
+        compras: '/dashboard-compras',
+      };
+      router.replace(rutas[userData.rol] ?? '/dashboard');
     }
   };
 

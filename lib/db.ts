@@ -1,4 +1,6 @@
-import mysql, { Pool, PoolOptions, RowDataPacket } from 'mysql2/promise';
+import mysql, { Pool, PoolConnection, PoolOptions, RowDataPacket } from 'mysql2/promise';
+
+type MysqlError = Error & { code?: string };
 import { logger } from '@/utils/logger';
 
 // Configuración de la conexión a la base de datos
@@ -11,8 +13,8 @@ const dbConfig: PoolOptions = {
   
   // Configuración del pool de conexiones
   waitForConnections: true,
-  connectionLimit: 50, // Aumentar el límite de conexiones
-  queueLimit: 100,     // Aumentar el límite de la cola
+  connectionLimit: 15,
+  queueLimit: 30,
   
   // Configuración de reconexión
   enableKeepAlive: true,
@@ -97,7 +99,7 @@ export interface Usuario extends RowDataPacket {
 }
 
 // Función para ejecutar consultas con manejo de conexión
-export async function query<T = any>(sql: string, values?: any, connection?: any): Promise<T> {
+export async function query<T = any>(sql: string, values?: unknown[], connection?: PoolConnection): Promise<T> {
   const shouldRelease = !connection;
   let conn = connection;
   let retries = 3;
@@ -111,19 +113,19 @@ export async function query<T = any>(sql: string, values?: any, connection?: any
       const [rows] = await conn.query(sql, values);
       return rows as unknown as T;
       
-    } catch (error: any) {
+    } catch (error) {
+      const err = error as MysqlError;
       logger.error('Error en la consulta', {
         intentosRestantes: retries - 1,
         sql,
         values,
-        mensaje: error.message,
-        codigo: error.code,
+        mensaje: err.message,
+        codigo: err.code,
       });
-      
-      // Si es un error de conexión, esperar un momento antes de reintentar
-      if (error.code === 'PROTOCOL_CONNECTION_LOST' || 
-          error.code === 'ECONNREFUSED' || 
-          error.code === 'ETIMEDOUT') {
+
+      if (err.code === 'PROTOCOL_CONNECTION_LOST' ||
+          err.code === 'ECONNREFUSED' ||
+          err.code === 'ETIMEDOUT') {
         retries--;
         if (retries > 0) {
           await new Promise(resolve => setTimeout(resolve, 1000)); // Esperar 1 segundo
@@ -137,6 +139,7 @@ export async function query<T = any>(sql: string, values?: any, connection?: any
       if (shouldRelease && conn) {
         try {
           await conn.release();
+          conn = undefined;
         } catch (releaseError) {
           logger.error('Error al liberar la conexión', releaseError);
         }
@@ -148,7 +151,7 @@ export async function query<T = any>(sql: string, values?: any, connection?: any
 }
 
 // Función para ejecutar transacción
-export async function withTransaction<T>(callback: (connection: any) => Promise<T>): Promise<T> {
+export async function withTransaction<T>(callback: (connection: PoolConnection) => Promise<T>): Promise<T> {
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();

@@ -75,16 +75,12 @@ const Navbar = () => {
     }
   }
 
-  const handleLogout = () => {
-    // Limpiar estado
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
     setIsLoggedIn(false)
     setUserInfo(null)
-    
-    // Limpiar localStorage
     localStorage.removeItem("usuarioLogueado")
     localStorage.removeItem("usuarioData")
-    
-    // Redirigir a la página principal
     router.push('/')
   }
 
