@@ -27,5 +27,7 @@ export interface Requisition {
   comentarioRechazo?: string;
   comentarioRechazoFinal?: string;
   fechaUltimoRechazo?: string;
+  aprobadoPor?: string | null;
+  rechazadoPor?: string | null;
   fechaUltimaModificacion?: string;
 }

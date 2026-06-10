@@ -6,7 +6,7 @@ import Link from "next/link"
 import { v4 as uuidv4 } from "uuid" 
 import RequisitionForm from "./RequisitionForm"
 import RequisitionList from "./RequisitionList"
-import RequisitionDetails from "./RequisitionDetails"
+import RequisitionDetails from "./RequisitionDetailsV2"
 import type { Requisition, ArchivoAdjunto } from "@/types/requisition"
 import "../styles/Dashboard.css"
 

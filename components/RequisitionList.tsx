@@ -25,6 +25,7 @@ export default function RequisitionList({
 }: RequisitionListProps) {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("todos")
+  const [empresaFilter, setEmpresaFilter] = useState("todas")
   
   // Función para formatear fechas
   const formatDate = (dateInput: number | Date | string | undefined | null): string => {
@@ -163,8 +164,9 @@ export default function RequisitionList({
     );
 
     const matchesStatus = statusFilter === "todos" || requisition.estado === statusFilter;
+    const matchesEmpresa = empresaFilter === "todas" || requisition.empresa?.toLowerCase().includes(empresaFilter.toLowerCase());
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesEmpresa;
   })
 
   return (
@@ -174,33 +176,49 @@ export default function RequisitionList({
       </h2>
       
       <div className="filters-container">
-        <div className="search-bar">
-          <div className="search-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
+        <div className="search-bars-group">
+          <div className="search-bar">
+            <div className="search-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <input
+              type="text"
+              placeholder="Buscar por número de requisición..."
+              className="search-input"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-          <input 
-            type="text" 
-            placeholder="Buscar por número de requisición..." 
-            className="search-input"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+
+          <div className="search-bar">
+            <div className="search-icon">
+              <Building size={16} />
+            </div>
+            <input
+              type="text"
+              placeholder="Buscar por holding..."
+              className="search-input"
+              value={empresaFilter === "todas" ? "" : empresaFilter}
+              onChange={(e) => setEmpresaFilter(e.target.value || "todas")}
+            />
+          </div>
         </div>
-        
-        <select 
+
+        <select
           className="status-filter"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
         >
-          <option value="todos">Todos</option>
+          <option value="todos">Todos los estados</option>
           <option value="pendiente">Pendiente</option>
-          <option value="aprobado">Aprobado</option>
-          <option value="rechazado">Rechazado</option>
-          <option value="en proceso">En proceso</option>
-          <option value="completado">Completado</option>
+          <option value="aprobada">Aprobada</option>
+          <option value="rechazada">Rechazada</option>
+          <option value="correccion">En corrección</option>
+          <option value="en_gestion">En gestión</option>
+          <option value="completada">Completada</option>
         </select>
       </div>
       
@@ -222,7 +240,12 @@ export default function RequisitionList({
                 <User size={16} className="detail-icon" />
                 <span>{requisition.nombreSolicitante || 'Solicitante no especificado'}</span>
               </div>
-              
+
+              <div className="empresa-row">
+                <Building size={16} className="detail-icon" />
+                <span>{requisition.empresa || 'Sin holding'}</span>
+              </div>
+
               <div className="fecha">
                 <Calendar size={16} className="detail-icon" />
                 <span>{requisition.fechaSolicitud ? formatDate(requisition.fechaSolicitud) : 'Sin fecha'}</span>

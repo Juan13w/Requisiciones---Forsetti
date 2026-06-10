@@ -45,7 +45,8 @@ async function jsonWithSession(data: object, userId: number, rol: string, email:
 
 export async function POST(request: Request) {
   try {
-    const { email, password } = await request.json();
+    const { email: rawEmail, password } = await request.json();
+    const email = rawEmail?.trim();
 
     if (!email) {
       return NextResponse.json(

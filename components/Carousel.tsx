@@ -43,12 +43,12 @@ const Carousel = () => {
       <Slider {...settings}>
         {images.map((image, index) => (
           <div key={index} className="carousel-slide">
-            <Image 
-              src={image.src} 
-              alt={image.alt} 
-              layout="fill"
-              objectFit="cover"
-              priority={index === 0} // Prioriza la carga de la primera imagen
+            <Image
+              src={image.src}
+              alt={image.alt}
+              fill
+              style={{ objectFit: 'cover' }}
+              priority={index === 0}
             />
             <div className="carousel-caption">
               <h2>Sistema Integral de Requisiciones Empresariales </h2>

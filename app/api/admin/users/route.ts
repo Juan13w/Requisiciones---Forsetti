@@ -53,11 +53,19 @@ export async function POST(request: Request) {
   const connection = await pool.getConnection();
   
   try {
-    const { email, role, empresa } = await request.json();
+    const { email: rawEmail, role, empresa, clave } = await request.json();
+    const email = rawEmail?.trim();
 
     if (!email || !role) {
       return NextResponse.json(
         { success: false, message: 'Correo y rol son requeridos' },
+        { status: 400 }
+      );
+    }
+
+    if (!clave) {
+      return NextResponse.json(
+        { success: false, message: 'La contraseña es requerida' },
         { status: 400 }
       );
     }
@@ -71,24 +79,24 @@ export async function POST(request: Request) {
 
     if (role === 'coordinator') {
       const [result] = await connection.query<ResultSetHeader>(
-        'INSERT INTO coordinador (correo, empresa) VALUES (?, ?)',
-        [email, empresa]
+        'INSERT INTO coordinador (correo, empresa, clave) VALUES (?, ?, ?)',
+        [email, empresa, clave]
       );
-      
+
       const [newCoordinator] = await connection.query<RowDataPacket[]>(
         'SELECT coordinador_id as id, correo, empresa FROM coordinador WHERE coordinador_id = ?',
         [result.insertId]
       );
-      
+
       return NextResponse.json({
         success: true,
         data: newCoordinator[0],
       });
-      
+
     } else if (role === 'purchaser') {
       const [result] = await connection.query<ResultSetHeader>(
-        'INSERT INTO compras (correo) VALUES (?)',
-        [email]
+        'INSERT INTO compras (correo, clave) VALUES (?, ?)',
+        [email, clave]
       );
       
       const [newPurchaser] = await connection.query<RowDataPacket[]>(

@@ -39,16 +39,23 @@
   border-radius: 0.5rem;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   margin: 1rem 0;
+
   border: 1px solid #BFA181;
   gap: 1rem;
   flex-wrap: wrap;
 }
 
+.search-bars-group {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  margin-right: 1rem;
+}
+
 .search-bar {
   position: relative;
   flex: 1;
-  max-width: 400px;
-  min-width: 250px;
+  min-width: 200px;
 }
 
 .search-icon {
@@ -374,6 +381,15 @@
   flex-shrink: 0;
   width: 1rem;
   height: 1rem;
+}
+
+.empresa-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #BFA181;
+  font-weight: 500;
 }
 
 .action-btn {

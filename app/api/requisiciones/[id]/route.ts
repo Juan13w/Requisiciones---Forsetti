@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { PoolConnection } from 'mysql2/promise';
+import { enviarNotificacionAprobacion } from '@/services/emailService';
 
 // Interfaz para el resultado de la actualización de la base de datos
 interface UpdateResult {
@@ -99,17 +100,17 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     let aprobadorId = null;
     let aprobadorNombre = null;
     
+    const usuarioActual = body.usuarioActual || 'Sistema';
+
     if (estado === 'aprobada') {
-      // Aquí deberías obtener el ID del usuario logueado
-      // Por ahora, usaremos el nombre del solicitante como referencia
-      // TODO: Implementar obtención del usuario actual desde sesión o token
-      const usuarioActual = body.usuarioActual || 'Sistema'; // Deberías pasar esto desde el frontend
-      
-      // Guardar en requisicion (para PDF) - ANTES de ejecutar la consulta
       fieldsToUpdate.push('aprobado_por = ?');
       values.push(usuarioActual);
-      
-      // Guardar para historial
+      aprobadorNombre = usuarioActual;
+    }
+
+    if (estado === 'rechazada') {
+      fieldsToUpdate.push('rechazado_por = ?');
+      values.push(usuarioActual);
       aprobadorNombre = usuarioActual;
     }
 
@@ -180,7 +181,38 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       );
     } catch (histErr) {
       console.warn('No se pudo registrar historial de requisición:', histErr);
-      // No interrumpimos el flujo por error de historial
+    }
+
+    // Enviar notificación por correo al coordinador cuando la requisición es aprobada
+    if (estado === 'aprobada') {
+      try {
+        const reqRows = await query<any[]>(
+          `SELECT r.consecutivo, r.empresa, r.descripcion, r.cantidad, r.proceso,
+                  r.nombre_solicitante, r.aprobado_por,
+                  c.correo as coordinador_email
+           FROM requisicion r
+           JOIN coordinador c ON r.coordinador_id = c.coordinador_id
+           WHERE r.requisicion_id = ?`,
+          [requisicionId]
+        );
+        if (reqRows.length > 0) {
+          const req = reqRows[0];
+          await enviarNotificacionAprobacion(req.coordinador_email, {
+            consecutivo: req.consecutivo,
+            empresa: req.empresa,
+            descripcion: req.descripcion,
+            cantidad: req.cantidad,
+            proceso: req.proceso,
+            nombre_solicitante: req.nombre_solicitante,
+            aprobado_por: req.aprobado_por || aprobadorNombre || 'Compras',
+            fecha_aprobacion: new Date().toLocaleDateString('es-CO', {
+              year: 'numeric', month: 'long', day: 'numeric',
+            }),
+          });
+        }
+      } catch (emailErr) {
+        console.warn('No se pudo enviar el correo de aprobación:', emailErr);
+      }
     }
 
     // Obtener la requisición actualizada con los archivos adjuntos

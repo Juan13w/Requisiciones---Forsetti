@@ -214,12 +214,14 @@ export async function GET(request: Request) {
 
     let query = `
       SELECT 
-        r.requisicion_id, r.consecutivo, r.empresa, r.fecha_solicitud, 
+        r.requisicion_id, r.consecutivo, r.empresa, r.fecha_solicitud,
         r.nombre_solicitante, r.proceso, r.justificacion, r.justificacion_ti,
         r.descripcion, r.cantidad, r.estado,
         r.comentario_rechazo as comentarioRechazo,
         r.comentario_rechazo_f as comentarioRechazoFinal,
-        r.intentos_revision, r.fecha_ultimo_rechazo, r.coordinador_id, 
+        r.intentos_revision, r.fecha_ultimo_rechazo, r.coordinador_id,
+        r.aprobado_por as aprobadoPor,
+        r.rechazado_por as rechazadoPor,
         c.correo as coordinador_email, c.empresa as coordinador_empresa
       FROM requisicion r
       LEFT JOIN coordinador c ON r.coordinador_id = c.coordinador_id
@@ -304,6 +306,8 @@ export async function GET(request: Request) {
         estado: row.estado || 'pendiente',
         comentarioRechazo: row.comentarioRechazo || row.comentario_rechazo || '',
         comentarioRechazoFinal: row.comentarioRechazoFinal || row.comentario_rechazo_f || '',
+        aprobadoPor: row.aprobadoPor || null,
+        rechazadoPor: row.rechazadoPor || null,
         fechaCreacion: row.fecha_solicitud
           ? new Date(row.fecha_solicitud).getTime()
           : Date.now(),

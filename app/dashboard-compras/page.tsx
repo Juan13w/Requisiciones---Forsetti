@@ -20,6 +20,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import RequisitionCharts from '@/components/charts/RequisitionCharts';
+import ActaEditor from '@/components/ActaEditor';
 // Los estilos se cargan a través de la configuración global en layout.tsx
 
 type Estado = 'pendiente' | 'en_gestion' | 'aprobada' | 'rechazada' | 'correccion' | 'completada';
@@ -111,6 +112,9 @@ export default function DashboardCompras() {
 
   // Modal de detalle
   const [showDetailModal, setShowDetailModal] = useState<{ open: boolean; req: RequisicionDB | null }>({ open: false, req: null });
+
+  // Modal de acta de entrega
+  const [showActaModal, setShowActaModal] = useState<{ open: boolean; req: RequisicionDB | null }>({ open: false, req: null });
 
   // Modal de filtros para reporte PDF
   const [showReportModal, setShowReportModal] = useState(false);
@@ -1211,6 +1215,19 @@ const getCurrentUserEmail = () => {
                       >
                         <History className="action-icon" size={16} />
                       </button>
+
+                      {/* Botón Acta de Entrega — disponible desde aprobada */}
+                      {(req.estado === 'aprobada' || req.estado === 'completada') && (
+                        <button
+                          onClick={() => setShowActaModal({ open: true, req })}
+                          className="action-btn"
+                          title="Acta de entrega"
+                          type="button"
+                          style={{ background: '#1c2e1c', color: '#4ade80', border: '1px solid #166534' }}
+                        >
+                          <FileText className="action-icon" size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -1935,9 +1952,24 @@ const getCurrentUserEmail = () => {
           </div>
         </div>
       )}
-    </div>
 
-    
+      {/* MODAL ACTA DE ENTREGA */}
+      {showActaModal.open && showActaModal.req && (
+        <ActaEditor
+          requisicion={{
+            requisicion_id: showActaModal.req.requisicion_id,
+            consecutivo:    showActaModal.req.consecutivo,
+            empresa:        showActaModal.req.empresa,
+            proceso:        showActaModal.req.proceso,
+            descripcion:    showActaModal.req.descripcion,
+            cantidad:       showActaModal.req.cantidad,
+            coordinador_email: showActaModal.req.coordinador_email,
+          }}
+          onClose={() => setShowActaModal({ open: false, req: null })}
+        />
+      )}
+
+    </div>
   );
 }
-      
+
