@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid"
 import RequisitionForm from "./RequisitionForm"
 import RequisitionList from "./RequisitionList"
 import RequisitionDetails from "./RequisitionDetailsV2"
+import FirmaCoordinadorModal from "./FirmaCoordinadorModal"
 import type { Requisition, ArchivoAdjunto } from "@/types/requisition"
 import "../styles/Dashboard.css"
 
@@ -26,6 +27,7 @@ const Dashboard = () => {
   const [selectedRequisition, setSelectedRequisition] = useState<Requisition | null>(null)
   const [userData, setUserData] = useState<{ [key: string]: any } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [showFirmaModal, setShowFirmaModal] = useState(false)
 
   const loadRequisitions = useCallback(async () => {
     try {
@@ -81,32 +83,33 @@ const Dashboard = () => {
       const isAuthenticated = localStorage.getItem("usuarioLogueado") === "true";
       const userDataStr = localStorage.getItem("usuarioData");
 
-      console.log('Inicializando dashboard...');
-      console.log('Usuario autenticado:', isAuthenticated);
-      console.log('Datos del usuario (crudos):', userDataStr);
-
       if (!isAuthenticated || !userDataStr) {
-        console.log('Usuario no autenticado o sin datos, redirigiendo a /');
         router.push("/");
         return;
       }
 
       try {
+        // Verificar que la cookie de sesión sigue válida
+        const res = await fetch('/api/auth/session');
+        const { user: sessionUser } = await res.json();
+
+        if (!sessionUser) {
+          localStorage.removeItem("usuarioLogueado");
+          localStorage.removeItem("usuarioData");
+          router.push("/");
+          return;
+        }
+
         const user = JSON.parse(userDataStr);
-        console.log('Datos del usuario (parseados):', user);
-        
-        // Si el usuario es de compras, redirigir al dashboard de compras
+
         if (user.rol === "compras") {
-          console.log('Usuario es de compras, redirigiendo...');
           router.push("/dashboard-compras");
           return;
         }
-        
-        console.log('Estableciendo datos del usuario en el estado...');
+
         setUserData(user);
       } catch (error) {
         console.error("Error al cargar datos del usuario:", error);
-        alert("Error al cargar los datos del usuario. Por favor, inicia sesión nuevamente.");
         router.push("/");
       }
     };
@@ -347,6 +350,12 @@ const Dashboard = () => {
           onClose={() => setSelectedRequisition(null)}
         />
       )}
+      {showFirmaModal && (
+        <FirmaCoordinadorModal
+          onGuardado={() => setShowFirmaModal(false)}
+          onCancelar={() => setShowFirmaModal(false)}
+        />
+      )}
       <nav className="dashboard-nav">
         <div className="nav-container">
           <div className="nav-brand">
@@ -366,6 +375,12 @@ const Dashboard = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
               Nueva Requisición
+            </button>
+            <button onClick={() => setShowFirmaModal(true)} className="nav-button">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 11l6.586-6.586a2 2 0 112.828 2.828L11.828 13.828a4 4 0 01-1.414.94l-3.535 1.415 1.415-3.536a4 4 0 01.94-1.414z" />
+              </svg>
+              Configurar firma
             </button>
             <button onClick={handleLogout} className="logout-button">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

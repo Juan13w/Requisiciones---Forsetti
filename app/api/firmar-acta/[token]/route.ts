@@ -5,6 +5,17 @@ import { pathToFileURL } from 'url';
 import { query } from '@/lib/db';
 import { generarPdfActa, ActaData } from '@/services/pdfActaService';
 import { enviarConfirmacionRecibo } from '@/services/emailService';
+import {
+  processSignatureImage,
+  parseDataUri,
+  isAllowedSignatureMime,
+  MAX_SIGNATURE_UPLOAD_BYTES,
+} from '@/lib/signatureProcessor';
+
+// Esta ruta siempre debe reflejar el estado actual (firma guardada del coordinador,
+// estado del acta, etc.) — nunca servir una respuesta cacheada del navegador/CDN.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 // GET /api/firmar-acta/[token] — Devuelve los datos del acta para mostrar en la página de firma
 export async function GET(
@@ -19,11 +30,13 @@ export async function GET(
             f.codigo, f.version, f.vigencia, f.controlado,
             e.logo_url, e.ciudad_default,
             c.nombre AS entregado_por_nombre, c.cargo AS entregado_por_cargo,
-            c.firma_url AS firma_entregado_url
+            c.firma_url AS firma_entregado_url,
+            coor.nombre AS coord_nombre, coor.cargo AS coord_cargo, coor.firma_url AS coord_firma_url
      FROM actas a
      JOIN formato_acta f ON f.id = a.formato_acta_id
      LEFT JOIN empresas e ON e.id = a.empresa_id
      LEFT JOIN compras c ON c.usuario_id = a.entregado_por_user_id
+     LEFT JOIN coordinador coor ON coor.coordinador_id = a.recibido_por_user_id
      WHERE a.firma_token = ?`,
     [token]
   );
@@ -65,8 +78,14 @@ export async function GET(
         controlado: acta.controlado,
       },
       items,
+      // Firma guardada en el perfil del coordinador (si la configuró antes desde su
+      // dashboard). El frontend la usa para pre-llenar y permitir confirmar sin
+      // volver a dibujar/subir, pero el coordinador puede reemplazarla si quiere.
+      firmaGuardada: acta.coord_firma_url
+        ? { nombre: acta.coord_nombre || '', cargo: acta.coord_cargo || '', firmaUrl: acta.coord_firma_url }
+        : null,
     },
-  });
+  }, { headers: { 'Cache-Control': 'no-store, must-revalidate' } });
 }
 
 // POST /api/firmar-acta/[token] — Recibe la firma, regenera PDF, marca como recibida
@@ -81,12 +100,14 @@ export async function POST(
             f.codigo, f.version, f.vigencia, f.controlado,
             e.logo_url, e.ciudad_default,
             c.nombre AS comp_nombre, c.cargo AS comp_cargo, c.firma_url AS comp_firma,
-            coord.correo AS correo_compras
+            coord.correo AS correo_compras,
+            coor.firma_url AS coord_firma_url
      FROM actas a
      JOIN formato_acta f ON f.id = a.formato_acta_id
      LEFT JOIN empresas e ON e.id = a.empresa_id
      LEFT JOIN compras c ON c.usuario_id = a.entregado_por_user_id
      LEFT JOIN compras coord ON coord.usuario_id = a.entregado_por_user_id
+     LEFT JOIN coordinador coor ON coor.coordinador_id = a.recibido_por_user_id
      WHERE a.firma_token = ?`,
     [token]
   );
@@ -101,20 +122,81 @@ export async function POST(
   }
 
   const body = await request.json();
-  const { nombre, cargo, firmaBase64 } = body;
+  const { nombre, cargo, firmaBase64, firmaOrigen } = body;
 
-  if (!nombre?.trim() || !cargo?.trim() || !firmaBase64) {
-    return NextResponse.json(
-      { error: 'nombre, cargo y firmaBase64 son requeridos' },
-      { status: 400 }
-    );
+  if (!nombre?.trim() || !cargo?.trim()) {
+    return NextResponse.json({ error: 'nombre y cargo son requeridos' }, { status: 400 });
+  }
+  if (firmaOrigen !== 'guardada' && !firmaBase64) {
+    return NextResponse.json({ error: 'firmaBase64 es requerido' }, { status: 400 });
   }
 
-  // Guardar imagen de firma del receptor
-  const firmaRelativa = `/uploads/firmas/recibido/acta_${acta.id}_recibido.png`;
+  const firmaRelativa = `/uploads/firmas/recibido/acta_${acta.id}_recibido.webp`;
   const firmaAbsoluta = path.join(process.cwd(), 'public', firmaRelativa);
-  const base64Data = firmaBase64.replace(/^data:image\/\w+;base64,/, '');
-  fs.writeFileSync(firmaAbsoluta, Buffer.from(base64Data, 'base64'));
+  fs.mkdirSync(path.dirname(firmaAbsoluta), { recursive: true });
+
+  if (firmaOrigen === 'guardada') {
+    // Reutiliza la firma que el coordinador ya configuró en su perfil (dashboard).
+    // Ese archivo ya pasó por processSignatureImage al guardarse — no hace falta
+    // reprocesar, solo copiarlo a la ruta específica de esta acta.
+    if (!acta.coord_firma_url) {
+      return NextResponse.json({ error: 'No tienes una firma guardada en tu perfil.' }, { status: 400 });
+    }
+    const origenAbsoluto = path.join(process.cwd(), 'public', acta.coord_firma_url);
+    if (!fs.existsSync(origenAbsoluto)) {
+      return NextResponse.json({ error: 'La firma guardada ya no está disponible. Dibuja o sube una nueva.' }, { status: 400 });
+    }
+    fs.copyFileSync(origenAbsoluto, firmaAbsoluta);
+  } else {
+    let firmaMime: string;
+    let firmaBuffer: Buffer;
+    try {
+      ({ mime: firmaMime, buffer: firmaBuffer } = parseDataUri(firmaBase64));
+    } catch {
+      return NextResponse.json({ error: 'Formato de firma inválido' }, { status: 400 });
+    }
+
+    if (!isAllowedSignatureMime(firmaMime)) {
+      return NextResponse.json(
+        { error: 'Formato de imagen no soportado. Usa PNG, JPG o WebP.' },
+        { status: 400 }
+      );
+    }
+    if (firmaBuffer.byteLength > MAX_SIGNATURE_UPLOAD_BYTES) {
+      return NextResponse.json({ error: 'La imagen de la firma es demasiado grande (máx. 5 MB).' }, { status: 400 });
+    }
+
+    // Procesa (recorta, quita fondo blanco si aplica, redimensiona) y unifica a WebP lossless.
+    // Las firmas dibujadas en canvas ya vienen con fondo transparente; las subidas por el
+    // usuario suelen tener fondo blanco y se les aplica chroma key.
+    let firmaProcesada: Buffer;
+    try {
+      firmaProcesada = await processSignatureImage(firmaBuffer, {
+        skipBackgroundRemoval: firmaOrigen === 'dibujo',
+      });
+    } catch (err) {
+      return NextResponse.json({ error: 'No se pudo procesar la imagen de la firma', detail: String(err) }, { status: 400 });
+    }
+
+    fs.writeFileSync(firmaAbsoluta, firmaProcesada);
+
+    // Persistir también en el perfil del coordinador para reutilizar en futuras actas
+    // (mismo efecto que PUT /api/coordinador/perfil, pero disparado desde el link público
+    // de firma en vez del dashboard). Solo si sabemos a qué coordinador pertenece esta acta.
+    if (acta.recibido_por_user_id) {
+      const perfilDir = path.join(process.cwd(), 'public', 'uploads', 'firmas', 'coordinador');
+      fs.mkdirSync(perfilDir, { recursive: true });
+      const perfilFileName = `coordinador_${acta.recibido_por_user_id}.webp`;
+      const perfilAbsoluto = path.join(perfilDir, perfilFileName);
+      fs.writeFileSync(perfilAbsoluto, firmaProcesada);
+      const perfilRelativo = `/uploads/firmas/coordinador/${perfilFileName}`;
+
+      await query(
+        `UPDATE coordinador SET nombre = ?, cargo = ?, firma_url = ? WHERE coordinador_id = ?`,
+        [nombre.trim(), cargo.trim(), perfilRelativo, acta.recibido_por_user_id]
+      );
+    }
+  }
 
   // Resolver paths para Puppeteer
   let logoUrl: string | null = null;

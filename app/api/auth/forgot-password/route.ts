@@ -136,7 +136,7 @@ export async function POST(request: Request) {
     );
 
     // Generar URL de restablecimiento
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+    const resetUrl = `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:9091'}/reset-password?token=${resetToken}`;
 
     // Enviar correo electrónico
     const mailOptions = {

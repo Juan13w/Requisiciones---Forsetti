@@ -28,31 +28,43 @@ export default function Home() {
   // Verificar autenticación al cargar
   useEffect(() => {
     setIsClient(true);
-    
+
     if (typeof window === 'undefined') return;
-    
-    const checkAuth = () => {
+
+    const checkAuth = async () => {
       const usuarioLogueado = localStorage.getItem('usuarioLogueado') === 'true';
       const usuarioData = localStorage.getItem('usuarioData');
-      
+
       if (usuarioLogueado && usuarioData) {
+        // Verificar con el servidor que la cookie de sesión sigue válida
         try {
-          const user = JSON.parse(usuarioData);
+          const res = await fetch('/api/auth/session');
+          const { user } = await res.json();
+
+          if (!user) {
+            // Cookie expirada o inválida — limpiar localStorage y mostrar login
+            localStorage.removeItem('usuarioLogueado');
+            localStorage.removeItem('usuarioData');
+            setIsLoading(false);
+            return;
+          }
+
           const rutas: Record<string, string> = {
             admin: '/admin',
             coordinador: '/dashboard',
             compras: '/dashboard-compras',
           };
           router.replace(rutas[user.rol] ?? '/dashboard');
-        } catch (error) {
-          console.error('Error al analizar los datos del usuario:', error);
-          router.replace('/');
+        } catch {
+          localStorage.removeItem('usuarioLogueado');
+          localStorage.removeItem('usuarioData');
+          setIsLoading(false);
         }
       } else {
         setIsLoading(false);
       }
     };
-    
+
     checkAuth();
   }, [router]);
 

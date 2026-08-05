@@ -84,7 +84,10 @@ function ResetPasswordContent() {
         setIsSuccess(true)
         setMessage(data.message || 'Contraseña actualizada exitosamente')
         setTimeout(() => {
-          router.push('/login')
+          sessionStorage.removeItem('user')
+          localStorage.removeItem('usuarioLogueado')
+          localStorage.removeItem('usuarioData')
+          router.push('/')
         }, 2000)
       } else {
         setMessage(data.error || 'Ocurrió un error al actualizar tu contraseña')

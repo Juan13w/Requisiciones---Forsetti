@@ -39,8 +39,20 @@ const dbConfig: PoolOptions = {
   debug: process.env.DB_DEBUG === 'true'
 };
 
-// Crear el pool de conexiones
-const pool: Pool = mysql.createPool(dbConfig);
+// --- Cache del pool en global para evitar recrearlo en cada hot-reload ---
+declare global {
+  // eslint-disable-next-line no-var
+  var _mysqlPool: Pool | undefined;
+}
+
+const pool: Pool = global._mysqlPool || mysql.createPool(dbConfig);
+
+const isNewPool = !global._mysqlPool;
+
+if (process.env.NODE_ENV !== 'production') {
+  global._mysqlPool = pool;
+}
+// ---------------------------------------------------------------------
 
 // Verificar la conexión al iniciar
 async function initializeDatabase() {

@@ -13,6 +13,7 @@ interface ActaInfo {
   entregadoPorCargo: string;
   formato: { codigo: string; version: string; vigencia: string };
   items: { codigo_articulo: string; descripcion: string; cantidad: number }[];
+  firmaGuardada: { nombre: string; cargo: string; firmaUrl: string } | null;
 }
 
 type Estado = 'cargando' | 'listo' | 'firmando' | 'exito' | 'error' | 'invalido' | 'ya_firmado';
@@ -39,16 +40,28 @@ export default function FirmarActaPage() {
   const [dibujando, setDibujando] = useState(false);
   const [tieneFirma, setTieneFirma] = useState(false);
 
+  const [modo, setModo] = useState<'guardada' | 'dibujo' | 'archivo'>('dibujo');
+  const [archivoPreview, setArchivoPreview] = useState<string | null>(null);
+  const [archivoDataUri, setArchivoDataUri] = useState<string | null>(null);
+  const [archivoError, setArchivoError] = useState('');
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!token) return;
-    fetch(`/api/firmar-acta/${token}`)
+    fetch(`/api/firmar-acta/${token}`, { cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => {
         if (data.success) {
           setActa(data.data);
+          const guardada = data.data.firmaGuardada;
+          if (guardada) {
+            setModo('guardada');
+            if (guardada.nombre) setNombre(guardada.nombre);
+            if (guardada.cargo) setCargo(guardada.cargo);
+          }
           setEstado('listo');
         } else if (data.error?.includes('ya fue firmada')) {
           setEstado('ya_firmado');
@@ -111,19 +124,61 @@ export default function FirmarActaPage() {
     setTieneFirma(false);
   }
 
+  const FORMATOS_PERMITIDOS = ['image/png', 'image/jpeg', 'image/webp'];
+  const MAX_ARCHIVO_BYTES = 5 * 1024 * 1024; // 5 MB
+
+  function seleccionarArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setArchivoError('');
+
+    if (!FORMATOS_PERMITIDOS.includes(file.type)) {
+      setArchivoError('Formato no soportado. Usa PNG, JPG o WebP.');
+      return;
+    }
+    if (file.size > MAX_ARCHIVO_BYTES) {
+      setArchivoError('El archivo supera el tamaño máximo de 5 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUri = reader.result as string;
+      setArchivoDataUri(dataUri);
+      setArchivoPreview(dataUri);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function quitarArchivo() {
+    setArchivoDataUri(null);
+    setArchivoPreview(null);
+    setArchivoError('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
   async function confirmar() {
     if (!nombre.trim()) { alert('Por favor ingresa tu nombre completo.'); return; }
     if (!cargo.trim())  { alert('Por favor ingresa tu cargo.'); return; }
-    if (!tieneFirma)    { alert('Por favor dibuja tu firma en el recuadro.'); return; }
 
-    const firmaBase64 = canvasRef.current!.toDataURL('image/png');
+    let firmaBase64: string | undefined;
+    if (modo === 'dibujo') {
+      if (!tieneFirma) { alert('Por favor dibuja tu firma en el recuadro.'); return; }
+      firmaBase64 = canvasRef.current!.toDataURL('image/png');
+    } else if (modo === 'archivo') {
+      if (!archivoDataUri) { alert('Por favor sube una imagen con tu firma.'); return; }
+      firmaBase64 = archivoDataUri;
+    }
+    // modo === 'guardada': no se envía firmaBase64, el servidor reutiliza la firma
+    // ya guardada en el perfil del coordinador.
+
     setEstado('firmando');
 
     try {
       const res = await fetch(`/api/firmar-acta/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, cargo, firmaBase64 }),
+        body: JSON.stringify({ nombre, cargo, firmaBase64, firmaOrigen: modo }),
       });
       const data = await res.json();
       if (data.success) {
@@ -323,30 +378,116 @@ export default function FirmarActaPage() {
           </div>
 
           <label style={labelStyle}>Firma digital *</label>
-          <div style={{ border: `2px dashed ${tieneFirma ? GOLD : BORDER}`, borderRadius: 10, overflow: 'hidden', background: '#fafafa', marginBottom: 8 }}>
-            <canvas
-              ref={canvasRef}
-              width={620}
-              height={160}
-              style={{ display: 'block', width: '100%', cursor: 'crosshair', touchAction: 'none' }}
-              onMouseDown={iniciarTrazo}
-              onMouseMove={continuarTrazo}
-              onMouseUp={terminarTrazo}
-              onMouseLeave={terminarTrazo}
-              onTouchStart={iniciarTrazo}
-              onTouchMove={continuarTrazo}
-              onTouchEnd={terminarTrazo}
-            />
+
+          {/* Selector de modo: firma guardada (si existe), dibujar o subir imagen */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 10, background: '#f0f0f0', borderRadius: 8, padding: 4 }}>
+            {(acta?.firmaGuardada ? (['guardada', 'dibujo', 'archivo'] as const) : (['dibujo', 'archivo'] as const)).map((m) => (
+              <button
+                key={m}
+                onClick={() => setModo(m)}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '8px 12px',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  background: modo === m ? WHITE : 'transparent',
+                  color: modo === m ? TEXT : TEXT_MUTED,
+                  boxShadow: modo === m ? '0 1px 4px rgba(0,0,0,0.10)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {m === 'guardada' ? '✅ Mi firma guardada' : m === 'dibujo' ? '✏️ Dibujar firma' : '📤 Subir imagen'}
+              </button>
+            ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0 }}>Dibuja tu firma en el recuadro</p>
-            <button
-              onClick={limpiarFirma}
-              style={{ background: 'none', border: 'none', fontSize: 12, color: TEXT_MUTED, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
-            >
-              Limpiar
-            </button>
-          </div>
+
+          {modo === 'guardada' ? (
+            <>
+              <div style={{ border: `2px solid ${GOLD}`, borderRadius: 10, overflow: 'hidden', background: '#fafafa', marginBottom: 8, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={acta?.firmaGuardada?.firmaUrl} alt="Tu firma guardada" style={{ maxWidth: '100%', maxHeight: 140, objectFit: 'contain' }} />
+              </div>
+              <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0 }}>
+                Esta es la firma configurada en tu perfil. Se usará automáticamente — si quieres cambiarla, usa las pestañas &quot;Dibujar firma&quot; o &quot;Subir imagen&quot;.
+              </p>
+            </>
+          ) : modo === 'dibujo' ? (
+            <>
+              <div style={{ border: `2px dashed ${tieneFirma ? GOLD : BORDER}`, borderRadius: 10, overflow: 'hidden', background: '#fafafa', marginBottom: 8 }}>
+                <canvas
+                  ref={canvasRef}
+                  width={620}
+                  height={160}
+                  style={{ display: 'block', width: '100%', cursor: 'crosshair', touchAction: 'none' }}
+                  onMouseDown={iniciarTrazo}
+                  onMouseMove={continuarTrazo}
+                  onMouseUp={terminarTrazo}
+                  onMouseLeave={terminarTrazo}
+                  onTouchStart={iniciarTrazo}
+                  onTouchMove={continuarTrazo}
+                  onTouchEnd={terminarTrazo}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0 }}>Dibuja tu firma en el recuadro</p>
+                <button
+                  onClick={limpiarFirma}
+                  style={{ background: 'none', border: 'none', fontSize: 12, color: TEXT_MUTED, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                >
+                  Limpiar
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {archivoPreview ? (
+                <div style={{ border: `2px solid ${GOLD}`, borderRadius: 10, overflow: 'hidden', background: '#fafafa', marginBottom: 8, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={archivoPreview} alt="Vista previa de la firma" style={{ maxWidth: '100%', maxHeight: 140, objectFit: 'contain' }} />
+                </div>
+              ) : (
+                <label
+                  htmlFor="firma-file-input"
+                  style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    border: `2px dashed ${BORDER}`, borderRadius: 10, background: '#fafafa',
+                    marginBottom: 8, padding: '28px 16px', cursor: 'pointer', gap: 6,
+                  }}
+                >
+                  <span style={{ fontSize: 24 }}>📤</span>
+                  <span style={{ fontSize: 13, color: TEXT_MUTED, fontWeight: 600 }}>Haz clic para subir tu firma</span>
+                  <span style={{ fontSize: 11, color: TEXT_MUTED }}>PNG, JPG o WebP · máx. 5 MB</span>
+                  <span style={{ fontSize: 11, color: TEXT_MUTED, textAlign: 'center', maxWidth: 320 }}>
+                    Idealmente sobre fondo blanco (ej. foto de tu firma en papel). Evita capturas de pantalla de un fondo &quot;transparente&quot; a cuadros: a veces ese patrón queda grabado como color y no se puede quitar.
+                  </span>
+                </label>
+              )}
+              <input
+                id="firma-file-input"
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={seleccionarArchivo}
+                style={{ display: 'none' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <p style={{ fontSize: 12, color: archivoError ? RED : TEXT_MUTED, margin: 0 }}>
+                  {archivoError || 'Sube una foto o escaneo de tu firma'}
+                </p>
+                {archivoPreview && (
+                  <button
+                    onClick={quitarArchivo}
+                    style={{ background: 'none', border: 'none', fontSize: 12, color: TEXT_MUTED, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Botón confirmar */}

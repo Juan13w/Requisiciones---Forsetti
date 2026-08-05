@@ -19,28 +19,41 @@ export default function DashboardLayout({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const isAuthenticated = localStorage.getItem('usuarioLogueado') === 'true';
-    const userData = localStorage.getItem('usuarioData');
+    const checkAuth = async () => {
+      const isAuthenticated = localStorage.getItem('usuarioLogueado') === 'true';
+      const userData = localStorage.getItem('usuarioData');
 
-    if (!isAuthenticated || !userData) {
-      router.push('/');
-      return;
-    }
-
-    try {
-      const userDataParsed = JSON.parse(userData);
-      if (userDataParsed.rol !== 'compras') {
-        router.push('/dashboard');
+      if (!isAuthenticated || !userData) {
+        router.push('/');
         return;
       }
-      setUser(userDataParsed);
-    } catch (error) {
-      console.error('Error al analizar los datos del usuario:', error);
-      router.push('/');
-      return;
-    } finally {
-      setIsLoading(false);
-    }
+
+      try {
+        const res = await fetch('/api/auth/session');
+        const { user } = await res.json();
+
+        if (!user) {
+          localStorage.removeItem('usuarioLogueado');
+          localStorage.removeItem('usuarioData');
+          router.push('/');
+          return;
+        }
+
+        const userDataParsed = JSON.parse(userData);
+        if (userDataParsed.rol !== 'compras') {
+          router.push('/dashboard');
+          return;
+        }
+        setUser(userDataParsed);
+      } catch (error) {
+        console.error('Error al analizar los datos del usuario:', error);
+        router.push('/');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
   }, [router]);
 
   const handleLogout = async () => {

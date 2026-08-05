@@ -18,7 +18,7 @@ export default function LoginPage() {
     if (userData.rol === 'admin') {
       router.push('/admin')
     } else if (userData.rol === 'coordinador') {
-      router.push('/coordinador')
+      router.push('/dashboard')
     } else if (userData.rol === 'compras') {
       router.push('/dashboard-compras')
     } else {
