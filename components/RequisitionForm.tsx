@@ -100,7 +100,7 @@ export default function RequisitionForm({ onSave, onCancel, initialData }: Requi
   };
 
   // Lista de empresas disponibles
-  const empresasDisponibles = ["SCI", "EMTRA", "INPROSALUD", "SIMADRID", "EMTRASUR", "INCORPORANDO", "SERVISALUD", "ACCESALUD", "INPROSALUDPLUS"]; // Ajusta según tus necesidades
+  const empresasDisponibles = ["SCI", "EMTRA", "INPROSALUD", "SIMADRID", "EMTRASUR", "INCORPORANDO", "SERVISALUD", "ACCESALUD", "INPROSALUDPLUS", "SERTTI"]; // Ajusta según tus necesidades
   
   // Lista de empresas específicas para xiomara
   const empresasParaXiomara = ["INPROSALUD", "ACCESALUD", "IMPROSALUDPLUS", "SERVISALUD"];
